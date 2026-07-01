@@ -294,6 +294,41 @@
   }
   input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; accent-color: var(--accent); }
   .ikon-prioritas { font-size: 14px; margin-right: 3px; }
+
+  /* ── LIVE REFRESH BADGE ── */
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+    color: var(--text-dim);
+    transition: border-color .15s, color .15s;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .live-badge .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .live-badge.live-on { color: var(--replied); border-color: rgba(110,231,183,.3); }
+  .live-badge.live-on .dot {
+    background: var(--replied);
+    animation: live-pulse 1.6s ease-in-out infinite;
+  }
+  .live-badge.live-off .dot { background: var(--text-dim); }
+  @keyframes live-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(110,231,183,.5); }
+    50%      { box-shadow: 0 0 0 4px rgba(110,231,183,0); }
+  }
 </style>
 </head>
 <body>
@@ -355,6 +390,9 @@
   </select>
   <button class="btn btn-ghost" onclick="muatData()">↻ Refresh</button>
   <button class="btn btn-ghost" onclick="exportCSV()">⬇ Export CSV</button>
+  <div class="live-badge live-on" id="live-badge" onclick="toggleLiveRefresh()" title="Klik untuk pause/resume auto-refresh">
+    <span class="dot"></span><span id="live-badge-label">Live</span>
+  </div>
 </div>
 
 <!-- BULK ACTION BAR -->
@@ -408,9 +446,12 @@ let SENT = [];
 let filterStatus  = "semua";
 let editNomor     = null;   // nomor_wa yang sedang di-edit di modal
 let seleksi       = new Set();
+let sedangMuat    = false;  // cegah request numpuk kalau fetch lambat
 
 // ── LOAD DATA ──────────────────────────────────────────────────────────────
 async function muatData() {
+  if (sedangMuat) return;   // lagi ada request jalan, skip siklus ini
+  sedangMuat = true;
   try {
     const [resLeads, resSent] = await Promise.all([
       fetch("/api/data/leads"),
@@ -424,14 +465,56 @@ async function muatData() {
     updateStats(leads, SENT);
     updateABStats(SENT);
     render();
+    document.getElementById("error-banner").style.display = "none"; // sembunyikan kalau sempat error sebelumnya
     document.getElementById("last-update").textContent =
       "Update: " + new Date().toLocaleTimeString("id-ID");
   } catch (err) {
     document.getElementById("error-banner").style.display = "block";
     document.getElementById("last-update").textContent = "Gagal memuat";
     console.error(err);
+  } finally {
+    sedangMuat = false;
   }
 }
+
+// ── LIVE REFRESH ──────────────────────────────────────────────────────────
+// Auto-polling data tiap beberapa detik supaya dashboard selalu up-to-date
+// tanpa perlu refresh manual — berguna kalau ada 2 orang buka dashboard
+// bersamaan, atau lead baru masuk lewat bot Telegram / build otomatis.
+const LIVE_REFRESH_MS = 5000;
+let liveRefreshOn    = true;
+let liveRefreshTimer = null;
+
+function mulaiLiveRefresh() {
+  hentikanLiveRefresh();
+  liveRefreshTimer = setInterval(() => {
+    // Skip kalau tab lagi tidak aktif — hemat request, browser biasanya
+    // throttle timer di background tab juga jadi ini bukan penghematan wajib.
+    if (!liveRefreshOn || document.hidden) return;
+    muatData();
+  }, LIVE_REFRESH_MS);
+}
+function hentikanLiveRefresh() {
+  if (liveRefreshTimer) { clearInterval(liveRefreshTimer); liveRefreshTimer = null; }
+}
+function toggleLiveRefresh() {
+  liveRefreshOn = !liveRefreshOn;
+  perbaruiLiveBadge();
+  if (liveRefreshOn) muatData(); // langsung refresh pas di-resume
+}
+function perbaruiLiveBadge() {
+  const badge = document.getElementById("live-badge");
+  const label = document.getElementById("live-badge-label");
+  if (!badge || !label) return;
+  badge.classList.toggle("live-on", liveRefreshOn);
+  badge.classList.toggle("live-off", !liveRefreshOn);
+  label.textContent = liveRefreshOn ? "Live" : "Paused";
+}
+// Begitu tab dibuka lagi (habis di-minimize / pindah tab), langsung refresh
+// sekali supaya datanya gak basi, baru lanjut polling normal.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && liveRefreshOn) muatData();
+});
 
 // ── STATS ──────────────────────────────────────────────────────────────────
 function updateStats(leads, sent) {
@@ -732,6 +815,7 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 muatData();
+mulaiLiveRefresh();
 document.getElementById("card-total").classList.add("active");
 </script>
 </body>
