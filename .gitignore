@@ -1,0 +1,27 @@
+# Secrets — jangan pernah commit
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+
+# Data lead & pesan — berisi nomor WA/data bisnis asli, jangan masuk git.
+# (kode baca/tulis semua lewat agents/db.py; file ini cukup ada lokal)
+data/*.db
+data/*.db-journal
+data/*.json
+data/*.txt
+data/*.log
+data/backup/
+data/raw_scrape/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

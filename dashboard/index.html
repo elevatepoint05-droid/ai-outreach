@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Outreach Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #11161f;
+    --panel-border: #1f2733;
+    --text: #e6e9ef;
+    --text-dim: #8b97a8;
+    --accent: #6ee7b7;
+    --accent-soft: rgba(110, 231, 183, 0.12);
+    --pending: #f4b740;
+    --sent: #5fb0ff;
+    --replied: #6ee7b7;
+    --bounced: #ff6b6b;
+    --draft: #c084fc;
+    --followup: #fb923c;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: radial-gradient(circle at top left, #121826 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    padding: 28px 32px;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 24px;
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header span { color: var(--text-dim); font-size: 13px; }
+
+  /* ── STAT CARDS ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 16px;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .card:hover, .card.active { border-color: var(--accent); }
+  .card .label { color: var(--text-dim); font-size: 12px; margin-bottom: 6px; }
+  .card .value { font-size: 26px; font-weight: 700; }
+  .card.total .value   { color: var(--accent); }
+  .card.draft .value   { color: var(--draft); }
+  .card.pending .value { color: var(--pending); }
+  .card.sent .value    { color: var(--sent); }
+  .card.replied .value { color: var(--replied); }
+  .card.followup .value { color: var(--followup); }
+
+  /* ── TOOLBAR ── */
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .toolbar input[type="search"] {
+    flex: 1;
+    min-width: 180px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .toolbar input[type="search"]:focus { border-color: var(--accent); }
+  .toolbar select {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
+  .btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity .15s, transform .1s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn:active { transform: translateY(1px); }
+  .btn-ghost {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    color: var(--text-dim);
+  }
+  .btn-primary { background: var(--accent); color: #0b0f17; }
+  .btn-danger  { background: rgba(255,107,107,.15); color: var(--bounced); border: 1px solid rgba(255,107,107,.3); }
+
+  /* ── TABLE PANEL ── */
+  .panel-table {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .panel-table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .panel-table-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .panel-table-header .count { color: var(--text-dim); font-size: 12px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    text-align: left;
+    padding: 11px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  th {
+    color: var(--text-dim);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: .04em;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr.selected { background: rgba(110,231,183,.05); }
+
+  td.pesan-cell {
+    color: var(--text-dim);
+    max-width: 340px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── BADGES ── */
+  .badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    white-space: nowrap;
+  }
+  .badge.draft        { background: rgba(192,132,252,.15); color: var(--draft); }
+  .badge.pending      { background: rgba(244,183,64,.15);  color: var(--pending); }
+  .badge.sent         { background: rgba(95,176,255,.15);  color: var(--sent); }
+  .badge.replied      { background: var(--accent-soft);    color: var(--replied); }
+  .badge.bounced      { background: rgba(255,107,107,.15); color: var(--bounced); }
+  .badge.followup_due { background: rgba(251,146,60,.15);  color: var(--followup); }
+
+  /* ── WA BUTTON ── */
+  .btn-wa {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    background: #25D366;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 999px;
+    text-decoration: none;
+    transition: background .15s, transform .1s;
+    white-space: nowrap;
+  }
+  .btn-wa:hover { background: #1ebe5c; transform: translateY(-1px); }
+  .btn-wa:active { transform: translateY(0); }
+
+  /* ── EDIT BUTTON ── */
+  .btn-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    background: rgba(192,132,252,.15);
+    color: var(--draft);
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    transition: background .15s;
+    white-space: nowrap;
+  }
+  .btn-edit:hover { background: rgba(192,132,252,.25); }
+
+  /* ── MODAL EDIT ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #161d29;
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 28px;
+    width: 100%;
+    max-width: 540px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .modal h3 { font-size: 16px; font-weight: 600; }
+  .modal .meta { color: var(--text-dim); font-size: 13px; }
+  .modal textarea {
+    width: 100%;
+    min-height: 140px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 12px;
+    color: var(--text);
+    font-size: 13px;
+    resize: vertical;
+    font-family: inherit;
+    outline: none;
+    line-height: 1.5;
+  }
+  .modal textarea:focus { border-color: var(--accent); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+  /* ── BULK BAR ── */
+  .bulk-bar {
+    display: none;
+    background: rgba(110,231,183,.08);
+    border: 1px solid rgba(110,231,183,.2);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 14px;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .bulk-bar.open { display: flex; }
+  .bulk-bar span { flex: 1; color: var(--accent); font-weight: 600; }
+
+  /* ── MISC ── */
+  .empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    display: none;
+  }
+  .error-banner {
+    background: rgba(255,107,107,.1);
+    border: 1px solid rgba(255,107,107,.3);
+    color: var(--bounced);
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    display: none;
+  }
+  input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; accent-color: var(--accent); }
+  .ikon-prioritas { font-size: 14px; margin-right: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AI Outreach Dashboard</h1>
+  <span id="last-update">Memuat data...</span>
+</header>
+
+<div class="error-banner" id="error-banner">
+  Gagal memuat data. Pastikan dibuka lewat server — jalankan <code>python main.py serve</code>.
+</div>
+
+<!-- STAT CARDS (klik untuk filter) -->
+<div class="stats">
+  <div class="card total"    onclick="setFilter('semua')"   id="card-total">
+    <div class="label">Total</div><div class="value" id="stat-total">0</div>
+  </div>
+  <div class="card draft"    onclick="setFilter('draft')"   id="card-draft">
+    <div class="label">Draft</div><div class="value" id="stat-draft">0</div>
+  </div>
+  <div class="card pending"  onclick="setFilter('pending')" id="card-pending">
+    <div class="label">Pending</div><div class="value" id="stat-pending">0</div>
+  </div>
+  <div class="card sent"     onclick="setFilter('sent')"    id="card-sent">
+    <div class="label">Sent</div><div class="value" id="stat-sent">0</div>
+  </div>
+  <div class="card replied"  onclick="setFilter('replied')" id="card-replied">
+    <div class="label">Replied</div><div class="value" id="stat-replied">0</div>
+  </div>
+  <div class="card followup" onclick="setFilter('followup_due')" id="card-followup">
+    <div class="label">Follow Up</div><div class="value" id="stat-followup">0</div>
+  </div>
+</div>
+
+<!-- A/B STATS + AVG RESPONSE TIME -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;" id="ab-section">
+  <div class="card" style="display:flex;gap:24px;align-items:center;padding:14px 20px;">
+    <div>
+      <div class="label" style="margin-bottom:4px;">A/B Template</div>
+      <div style="font-size:12px;color:var(--text-dim);" id="ab-stats">Belum ada data A/B</div>
+    </div>
+  </div>
+  <div class="card" style="padding:14px 20px;">
+    <div class="label" style="margin-bottom:4px;">Rata-rata Waktu Respons</div>
+    <div style="font-size:22px;font-weight:700;color:var(--accent);" id="avg-response">—</div>
+    <div style="font-size:11px;color:var(--text-dim);" id="avg-response-sub"></div>
+  </div>
+</div>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <input type="search" id="search-input" placeholder="Cari nama bisnis..." oninput="render()">
+  <select id="filter-kategori" onchange="render()">
+    <option value="">Semua kategori</option>
+    <option value="klinik">🏥 Klinik</option>
+    <option value="hotel">🏨 Hotel</option>
+    <option value="lainnya">Lainnya</option>
+  </select>
+  <button class="btn btn-ghost" onclick="muatData()">↻ Refresh</button>
+  <button class="btn btn-ghost" onclick="exportCSV()">⬇ Export CSV</button>
+</div>
+
+<!-- BULK ACTION BAR -->
+<div class="bulk-bar" id="bulk-bar">
+  <span id="bulk-label">0 dipilih</span>
+  <button class="btn btn-primary" onclick="bulkApprove()">✓ Approve semua → Pending</button>
+  <button class="btn btn-danger"  onclick="bulkBounced()">✕ Tandai Bounced</button>
+  <button class="btn btn-ghost"   onclick="clearSeleksi()">Batal</button>
+</div>
+
+<!-- TABLE -->
+<div class="panel-table">
+  <div class="panel-table-header">
+    <h2 id="tabel-judul">Semua Pesan</h2>
+    <span class="count" id="tabel-count"></span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="chk-all" onchange="toggleSemuaChk(this.checked)"></th>
+        <th>Bisnis</th>
+        <th>Kota</th>
+        <th>Kategori</th>
+        <th>Skor</th>
+        <th>Pesan</th>
+        <th>Status</th>
+        <th>Aksi</th>
+      </tr>
+    </thead>
+    <tbody id="tabel-pesan"></tbody>
+  </table>
+  <div class="empty-state" id="empty-state">Tidak ada data yang cocok.</div>
+</div>
+
+<!-- MODAL EDIT PESAN -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-nama">Edit Pesan</h3>
+    <div class="meta" id="modal-meta"></div>
+    <textarea id="modal-textarea" rows="6"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost"   onclick="tutupModal()">Batal</button>
+      <button class="btn btn-primary" onclick="simpanDanApprove()">✓ Simpan & Approve → Pending</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────────────
+let SENT = [];
+let filterStatus  = "semua";
+let editNomor     = null;   // nomor_wa yang sedang di-edit di modal
+let seleksi       = new Set();
+
+// ── LOAD DATA ──────────────────────────────────────────────────────────────
+async function muatData() {
+  try {
+    const [resLeads, resSent] = await Promise.all([
+      fetch("/api/data/leads"),
+      fetch("/api/data/sent"),
+    ]);
+    if (!resLeads.ok || !resSent.ok) throw new Error("Response tidak OK");
+
+    const leads = await resLeads.json();
+    SENT = (await resSent.json()).reverse(); // terbaru di atas
+
+    updateStats(leads, SENT);
+    updateABStats(SENT);
+    render();
+    document.getElementById("last-update").textContent =
+      "Update: " + new Date().toLocaleTimeString("id-ID");
+  } catch (err) {
+    document.getElementById("error-banner").style.display = "block";
+    document.getElementById("last-update").textContent = "Gagal memuat";
+    console.error(err);
+  }
+}
+
+// ── STATS ──────────────────────────────────────────────────────────────────
+function updateStats(leads, sent) {
+  const h = {draft:0, pending:0, sent:0, replied:0, bounced:0, followup_due:0};
+  sent.forEach(s => { const k = s.status||"pending"; if(k in h) h[k]++; });
+
+  document.getElementById("stat-total").textContent   = leads.length;
+  document.getElementById("stat-draft").textContent   = h.draft;
+  document.getElementById("stat-pending").textContent = h.pending;
+  document.getElementById("stat-sent").textContent    = h.sent;
+  document.getElementById("stat-replied").textContent = h.replied;
+  document.getElementById("stat-followup").textContent= h.followup_due;
+}
+
+// ── A/B STATS + AVG RESPONSE TIME ────────────────────────────────────────
+function updateABStats(sent) {
+  // A/B
+  const ab = {};
+  sent.forEach(s => {
+    const tid = s.template_id;
+    if (!tid) return;
+    if (!ab[tid]) ab[tid] = { sent: 0, replied: 0 };
+    if (["sent","replied"].includes(s.status)) ab[tid].sent++;
+    if (s.status === "replied") ab[tid].replied++;
+  });
+  const abEl = document.getElementById("ab-stats");
+  const keys = Object.keys(ab).sort();
+  if (keys.length === 0) {
+    abEl.textContent = "Belum ada data A/B";
+  } else {
+    abEl.innerHTML = keys.map(tid => {
+      const { sent, replied } = ab[tid];
+      const rate = sent > 0 ? ((replied / sent) * 100).toFixed(0) + "%" : "n/a";
+      const warna = tid === "A" ? "var(--sent)" : "var(--followup)";
+      return `<span style="color:${warna};font-weight:700;">Template ${tid}</span>: ${replied}/${sent} replied (${rate})`;
+    }).join(" &nbsp;|&nbsp; ");
+  }
+
+  // Avg response time
+  const deltas = [];
+  sent.forEach(s => {
+    if (s.jam_kirim && s.jam_reply) {
+      const diff = (new Date(s.jam_reply) - new Date(s.jam_kirim)) / 3600000;
+      if (diff >= 0) deltas.push(diff);
+    }
+  });
+  const avgEl  = document.getElementById("avg-response");
+  const subEl  = document.getElementById("avg-response-sub");
+  if (deltas.length === 0) {
+    avgEl.textContent = "—";
+    subEl.textContent = "Belum ada data respons";
+  } else {
+    const avg = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+    avgEl.textContent = avg < 1 ? Math.round(avg * 60) + " menit" : avg.toFixed(1) + " jam";
+    subEl.textContent = `dari ${deltas.length} balasan tercatat`;
+  }
+}
+function setFilter(status) {
+  filterStatus = status;
+  seleksi.clear();
+  document.querySelectorAll(".card").forEach(c => c.classList.remove("active"));
+  const map = {semua:"card-total", draft:"card-draft", pending:"card-pending",
+               sent:"card-sent", replied:"card-replied", followup_due:"card-followup"};
+  if (map[status]) document.getElementById(map[status]).classList.add("active");
+  render();
+}
+
+// ── RENDER TABLE ────────────────────────────────────────────────────────────
+function render() {
+  const query   = document.getElementById("search-input").value.toLowerCase();
+  const katFil  = document.getElementById("filter-kategori").value;
+
+  let data = SENT.filter(item => {
+    if (filterStatus !== "semua" && item.status !== filterStatus) return false;
+    if (katFil && item.kategori_group !== katFil) return false;
+    if (query && !(item.nama||"").toLowerCase().includes(query)) return false;
+    return true;
+  });
+
+  const judul = {semua:"Semua Pesan", draft:"Draft — Perlu Review", pending:"Pending Kirim",
+                  sent:"Sudah Dikirim", replied:"Ada Balasan", followup_due:"Perlu Follow Up"};
+  document.getElementById("tabel-judul").textContent  = judul[filterStatus] || "Pesan";
+  document.getElementById("tabel-count").textContent  = data.length + " entri";
+
+  const tbody = document.getElementById("tabel-pesan");
+  const empty = document.getElementById("empty-state");
+  tbody.innerHTML = "";
+
+  if (data.length === 0) { empty.style.display = "block"; return; }
+  empty.style.display = "none";
+
+  data.forEach(item => {
+    const status = item.status || "pending";
+    const ikon   = item.kategori_group === "klinik" ? "🏥"
+                 : item.kategori_group === "hotel"  ? "🏨" : "";
+
+    // ── Aksi cell
+    let aksi = "";
+    if (status === "draft") {
+      aksi = `<button class="btn-edit" onclick="bukaModal('${item.nomor_wa}')">✏ Review & Edit</button>`;
+    } else if (status === "pending" || status === "followup_due") {
+      const nomor  = formatNomor(item.nomor_wa||"");
+      const waUrl  = "https://web.whatsapp.com/send?phone=" + nomor +
+                     "&text=" + encodeURIComponent(item.pesan||"");
+      if (nomor) {
+        const label = status === "followup_due" ? "Follow Up WA" : "Hubungi via WA";
+        aksi = `<a href="${waUrl}" target="_blank" rel="noopener noreferrer"
+                   class="btn-wa" onclick="tandaiTerkirim('${item.nomor_wa}')">${WA_ICON} ${label}</a>`;
+      } else {
+        aksi = `<span class="badge pending">no number</span>`;
+      }
+    } else {
+      aksi = `<span class="badge ${status}">${labelStatus(status)}</span>`;
+    }
+
+    const diseleksi = seleksi.has(item.nomor_wa) ? "selected" : "";
+    const chkChecked = seleksi.has(item.nomor_wa) ? "checked" : "";
+    const skor = item.skor_pesan || 0;
+    const skorHtml = skor > 0
+      ? `<span style="color:${skor>=8?'var(--replied)':skor>=6?'var(--pending)':'var(--bounced)'};font-weight:700;">${skor}/10</span>`
+      : `<span style="color:var(--text-dim)">—</span>`;
+
+    const tr = document.createElement("tr");
+    tr.className = diseleksi;
+    tr.innerHTML = `
+      <td><input type="checkbox" ${chkChecked} onchange="toggleSeleksi('${item.nomor_wa}', this.checked)"></td>
+      <td>${ikon ? `<span class="ikon-prioritas">${ikon}</span>` : ""}${esc(item.nama||"-")}</td>
+      <td>${esc(item.kota||"-")}</td>
+      <td>${esc(item.kategori||"-")}</td>
+      <td>${skorHtml}</td>
+      <td class="pesan-cell" title="${esc(item.pesan||"")}">${esc(item.pesan||"-")}</td>
+      <td><span class="badge ${status}">${labelStatus(status)}</span></td>
+      <td>${aksi}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  updateBulkBar();
+}
+
+// ── STATUS LABELS ───────────────────────────────────────────────────────────
+function labelStatus(s) {
+  return {draft:"Draft", pending:"Pending", sent:"Sent", replied:"Replied",
+          bounced:"Bounced", followup_due:"Follow Up!"}[s] || s;
+}
+
+// ── SELEKSI / BULK ──────────────────────────────────────────────────────────
+function toggleSeleksi(nomor, checked) {
+  checked ? seleksi.add(nomor) : seleksi.delete(nomor);
+  updateBulkBar();
+}
+function toggleSemuaChk(checked) {
+  document.querySelectorAll("#tabel-pesan input[type=checkbox]").forEach(chk => {
+    chk.checked = checked;
+    const nomor = chk.closest("tr").querySelector(".btn-wa, .btn-edit, .badge")
+                  ?.getAttribute("onclick")?.match(/'([^']+)'/)?.[1];
+    // Ambil nomor dari data baris
+  });
+  // Rebuild seleksi dari visible rows
+  seleksi.clear();
+  if (checked) {
+    document.querySelectorAll("#tabel-pesan tr").forEach(tr => {
+      const chk = tr.querySelector("input[type=checkbox]");
+      if (chk) {
+        const onclick = tr.querySelector("[onclick]")?.getAttribute("onclick")||"";
+        const m = onclick.match(/'([0-9]+)'/);
+        if (m) seleksi.add(m[1]);
+      }
+    });
+  }
+  updateBulkBar();
+  render();
+}
+function clearSeleksi() {
+  seleksi.clear();
+  document.getElementById("chk-all").checked = false;
+  updateBulkBar();
+  render();
+}
+function updateBulkBar() {
+  const bar = document.getElementById("bulk-bar");
+  if (seleksi.size > 0) {
+    bar.classList.add("open");
+    document.getElementById("bulk-label").textContent = seleksi.size + " dipilih";
+  } else {
+    bar.classList.remove("open");
+  }
+}
+
+async function bulkApprove() {
+  if (!seleksi.size) return;
+  const list = [...seleksi];
+  for (const nomor of list) await apiUpdateStatus(nomor, "pending");
+  clearSeleksi();
+  await muatData();
+}
+async function bulkBounced() {
+  if (!seleksi.size) return;
+  if (!confirm(`Tandai ${seleksi.size} lead sebagai bounced?`)) return;
+  const list = [...seleksi];
+  for (const nomor of list) await apiUpdateStatus(nomor, "bounced");
+  clearSeleksi();
+  await muatData();
+}
+
+// ── MODAL EDIT ──────────────────────────────────────────────────────────────
+function bukaModal(nomorWa) {
+  const item = SENT.find(s => s.nomor_wa === nomorWa);
+  if (!item) return;
+  editNomor = nomorWa;
+  document.getElementById("modal-nama").textContent  = item.nama || "Edit Pesan";
+  document.getElementById("modal-meta").textContent  =
+    (item.kategori||"") + (item.kota ? " · " + item.kota : "");
+  document.getElementById("modal-textarea").value    = item.pesan || "";
+  document.getElementById("modal-overlay").classList.add("open");
+}
+function tutupModal() {
+  document.getElementById("modal-overlay").classList.remove("open");
+  editNomor = null;
+}
+async function simpanDanApprove() {
+  if (!editNomor) return;
+  const pesanBaru = document.getElementById("modal-textarea").value.trim();
+  if (!pesanBaru) return;
+
+  // Simpan teks pesan baru lewat endpoint
+  await fetch("/api/update-pesan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nomor_wa: editNomor, pesan: pesanBaru }),
+  });
+  // Approve sekalian
+  await apiUpdateStatus(editNomor, "pending");
+  tutupModal();
+  await muatData();
+}
+
+// Tutup modal kalau klik di luar
+document.getElementById("modal-overlay").addEventListener("click", function(e) {
+  if (e.target === this) tutupModal();
+});
+
+// ── API CALLS ──────────────────────────────────────────────────────────────
+async function apiUpdateStatus(nomorWa, status) {
+  try {
+    const r = await fetch("/api/update-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nomor_wa: nomorWa, status }),
+    });
+    return r.ok;
+  } catch (e) { console.error("[dashboard] update-status gagal:", e); return false; }
+}
+
+async function tandaiTerkirim(nomorWa) {
+  await apiUpdateStatus(nomorWa, "sent");
+  setTimeout(muatData, 600);
+}
+
+// ── UTILS ──────────────────────────────────────────────────────────────────
+function esc(str) {
+  const d = document.createElement("div");
+  d.textContent = str;
+  return d.innerHTML;
+}
+function formatNomor(nomor) {
+  if (!nomor) return "";
+  let n = nomor.replace(/[\s\-().+]/g,"").replace(/\D/g,"");
+  if (!n) return "";
+  if (n.startsWith("08")) return "62" + n.slice(1);
+  if (n.startsWith("62")) return n;
+  return n;
+}
+
+const WA_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" aria-hidden="true">
+  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+</svg>`;
+
+// ── EXPORT CSV ────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!SENT.length) return;
+  const cols = ["nama","nomor_wa","kota","kategori","status","template_id",
+                "jam_kirim","jam_reply","follow_up_count","pesan"];
+  const header = cols.join(",");
+  const rows = SENT.map(item =>
+    cols.map(c => {
+      const v = (item[c] ?? "").toString().replace(/"/g, '""');
+      return `"${v}"`;
+    }).join(",")
+  );
+  const csv  = [header, ...rows].join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `outreach_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+muatData();
+document.getElementById("card-total").classList.add("active");
+</script>
+</body>
+</html>
