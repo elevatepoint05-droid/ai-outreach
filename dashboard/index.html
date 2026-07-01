@@ -534,8 +534,8 @@ function render() {
       aksi = `<button class="btn-edit" onclick="bukaModal('${item.nomor_wa}')">✏ Review & Edit</button>`;
     } else if (status === "pending" || status === "followup_due") {
       const nomor  = formatNomor(item.nomor_wa||"");
-      const waUrl  = "https://web.whatsapp.com/send?phone=" + nomor +
-                     "&text=" + encodeURIComponent(item.pesan||"");
+      const waUrl  = "https://wa.me/" + nomor +
+                     "?text=" + encodeURIComponent(item.pesan||"");
       if (nomor) {
         const label = status === "followup_due" ? "Follow Up WA" : "Hubungi via WA";
         aksi = `<a href="${waUrl}" target="_blank" rel="noopener noreferrer"

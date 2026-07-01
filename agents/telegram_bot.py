@@ -79,7 +79,12 @@ def kirim(chat_id: int | str, teks: str) -> None:
     try:
         _req.post(
             _api_url("sendMessage"),
-            json={"chat_id": chat_id, "text": teks, "parse_mode": "HTML"},
+            json={
+                "chat_id": chat_id,
+                "text": teks,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
             timeout=10,
         )
     except Exception as e:
@@ -97,6 +102,16 @@ def _baca_leads() -> list[dict]:
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
+
+def _buat_wa_link(nomor_wa: str, pesan: str) -> str:
+    """
+    Bikin wa.me deep link — tap dari HP langsung buka WA app dengan
+    nomor dan pesan sudah ke-draft. Universal: app native di HP, WA Web di desktop.
+    """
+    import urllib.parse
+    nomor_bersih = nomor_wa.lstrip("+").replace(" ", "").replace("-", "")
+    return f"https://wa.me/{nomor_bersih}?text={urllib.parse.quote(pesan or '')}"
+
 
 def handle_status(chat_id: int) -> None:
     sent  = _baca_sent()
@@ -144,10 +159,12 @@ def handle_pending(chat_id: int) -> None:
         grup = p.get("kategori_group", "")
         ikon = "🏥" if grup == "klinik" else "🏨" if grup == "hotel" else "💼"
         fu   = " 🔁" if p.get("status") == "followup_due" else ""
+        wa_link = _buat_wa_link(p.get("nomor_wa", ""), p.get("pesan", ""))
         teks += (
             f"{i}. {ikon} <b>{p.get('nama', '?')}</b>{fu}\n"
-            f"   📱 <code>{p.get('nomor_wa', '')}</code>\n"
-            f"   <i>{(p.get('pesan') or '')[:90]}...</i>\n\n"
+            f"   <i>{(p.get('pesan') or '')[:80]}...</i>\n"
+            f"   👉 <a href=\"{wa_link}\">Buka & Kirim WA</a>\n"
+            f"   Habis kirim: <code>/kirim {p.get('nomor_wa', '')}</code>\n\n"
         )
     kirim(chat_id, teks)
 
@@ -209,6 +226,27 @@ def handle_followup(chat_id: int) -> None:
     _jalankan_command(chat_id, "followup")
 
 
+def handle_kirim(chat_id: int, args: str) -> None:
+    """
+    /kirim <nomor_wa> — tandai lead sebagai 'sent' setelah lo kirim WA manual.
+    """
+    nomor_wa = args.strip()
+    if not nomor_wa:
+        kirim(chat_id, "⚠️ Format: <code>/kirim 628xxxxxxxxx</code>\n\nCopy nomor dari daftar /pending.")
+        return
+
+    try:
+        from . import tracker
+    except ImportError:
+        from agents import tracker
+
+    berhasil = tracker.update_status(nomor_wa, "sent")
+    if berhasil:
+        kirim(chat_id, f"✅ <code>{nomor_wa}</code> ditandai <b>sent</b>.")
+    else:
+        kirim(chat_id, f"❌ Nomor <code>{nomor_wa}</code> tidak ditemukan di sistem.")
+
+
 HELP_TEXT = (
     "🤖 <b>AI Outreach Bot</b>\n"
     "<i>Kontrol sistem outreach dari HP</i>\n\n"
@@ -218,6 +256,7 @@ HELP_TEXT = (
     "/daily     — followup + build (siklus harian)\n"
     "/build     — generate pesan baru saja\n"
     "/followup  — tandai lead yang perlu follow-up\n"
+    "/kirim <nomor> — tandai sent setelah kirim WA manual\n"
     "/help      — tampilkan ini"
 )
 
@@ -292,6 +331,9 @@ def run_polling() -> None:
                 cmd = teks.split()[0].lower()
                 if cmd in {"/start", "/help"}:
                     kirim(chat_id, HELP_TEXT)
+                elif cmd == "/kirim":
+                    args = teks[len(cmd):].strip()
+                    handle_kirim(chat_id, args)
                 elif cmd in _COMMANDS:
                     _COMMANDS[cmd](chat_id)
                 else:
