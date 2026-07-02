@@ -19,6 +19,7 @@ data/*.txt
 data/*.log
 data/backup/
 data/raw_scrape/
+data/reports/
 
 # OS / editor
 .DS_Store

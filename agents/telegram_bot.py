@@ -12,6 +12,8 @@ Commands yang tersedia:
     /daily   — trigger followup + build (sama kayak python main.py daily)
     /build   — trigger build saja
     /followup — trigger followup saja
+    /kirim <nomor> — tandai lead 'sent' setelah kirim WA manual
+    /report  — generate laporan PDF 7 hari terakhir, dikirim langsung ke chat
 
 Setup (sekali saja):
     1. Isi TELEGRAM_BOT_TOKEN di .env (dapat dari BotFather)
@@ -226,6 +228,25 @@ def handle_followup(chat_id: int) -> None:
     _jalankan_command(chat_id, "followup")
 
 
+def handle_report(chat_id: int) -> None:
+    kirim(chat_id, "⏳ Membuat laporan PDF...")
+    try:
+        try:
+            from . import report
+        except ImportError:
+            from agents import report
+        path = report.generate(hari=7)
+        with open(path, "rb") as f:
+            _req.post(
+                _api_url("sendDocument"),
+                data={"chat_id": chat_id, "caption": "📊 Laporan outreach 7 hari terakhir"},
+                files={"document": (path.name, f, "application/pdf")},
+                timeout=30,
+            )
+    except Exception as e:
+        kirim(chat_id, f"❌ Gagal membuat laporan: {e}")
+
+
 def handle_kirim(chat_id: int, args: str) -> None:
     """
     /kirim <nomor_wa> — tandai lead sebagai 'sent' setelah lo kirim WA manual.
@@ -257,6 +278,7 @@ HELP_TEXT = (
     "/build     — generate pesan baru saja\n"
     "/followup  — tandai lead yang perlu follow-up\n"
     "/kirim <nomor> — tandai sent setelah kirim WA manual\n"
+    "/report — laporan PDF 7 hari terakhir (langsung dikirim ke chat)\n"
     "/help      — tampilkan ini"
 )
 
@@ -267,6 +289,7 @@ _COMMANDS: dict[str, callable] = {
     "/daily":    handle_daily,
     "/build":    handle_build,
     "/followup": handle_followup,
+    "/report":   handle_report,
 }
 
 

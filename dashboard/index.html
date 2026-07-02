@@ -381,13 +381,23 @@
 
 <!-- TOOLBAR -->
 <div class="toolbar">
-  <input type="search" id="search-input" placeholder="Cari nama bisnis..." oninput="render()">
+  <input type="search" id="search-input" placeholder="Cari nama / nomor WA / pesan..." oninput="render()">
   <select id="filter-kategori" onchange="render()">
     <option value="">Semua kategori</option>
     <option value="klinik">🏥 Klinik</option>
     <option value="hotel">🏨 Hotel</option>
     <option value="lainnya">Lainnya</option>
   </select>
+  <select id="filter-kota" onchange="render()">
+    <option value="">Semua kota</option>
+  </select>
+  <select id="sort-by" onchange="render()">
+    <option value="terbaru">Terbaru diupdate</option>
+    <option value="skor_desc">Skor pesan tertinggi</option>
+    <option value="nama_asc">Nama A-Z</option>
+    <option value="nama_desc">Nama Z-A</option>
+  </select>
+  <button class="btn btn-ghost" onclick="resetFilter()">✕ Reset Filter</button>
   <button class="btn btn-ghost" onclick="muatData()">↻ Refresh</button>
   <button class="btn btn-ghost" onclick="exportCSV()">⬇ Export CSV</button>
   <div class="live-badge live-on" id="live-badge" onclick="toggleLiveRefresh()" title="Klik untuk pause/resume auto-refresh">
@@ -464,6 +474,7 @@ async function muatData() {
 
     updateStats(leads, SENT);
     updateABStats(SENT);
+    isiOpsiKota();
     render();
     document.getElementById("error-banner").style.display = "none"; // sembunyikan kalau sempat error sebelumnya
     document.getElementById("last-update").textContent =
@@ -582,17 +593,60 @@ function setFilter(status) {
   render();
 }
 
+// ── FILTER KOTA (auto-populate dari data) ───────────────────────────────────
+function isiOpsiKota() {
+  const select = document.getElementById("filter-kota");
+  const kotaSet = new Set(SENT.map(s => s.kota).filter(Boolean));
+  const kotaSekarang = select.value;
+  select.innerHTML = '<option value="">Semua kota</option>';
+  [...kotaSet].sort().forEach(kota => {
+    const opt = document.createElement("option");
+    opt.value = kota;
+    opt.textContent = kota;
+    select.appendChild(opt);
+  });
+  select.value = kotaSekarang;
+}
+
+// ── RESET FILTER ─────────────────────────────────────────────────────────────
+function resetFilter() {
+  document.getElementById("search-input").value = "";
+  document.getElementById("filter-kategori").value = "";
+  document.getElementById("filter-kota").value = "";
+  document.getElementById("sort-by").value = "terbaru";
+  filterStatus = "semua";
+  document.querySelectorAll(".card").forEach(c => c.classList.remove("active"));
+  document.getElementById("card-total").classList.add("active");
+  render();
+}
+
 // ── RENDER TABLE ────────────────────────────────────────────────────────────
 function render() {
   const query   = document.getElementById("search-input").value.toLowerCase();
   const katFil  = document.getElementById("filter-kategori").value;
+  const kotaFil = document.getElementById("filter-kota").value;
+  const sortBy  = document.getElementById("sort-by").value;
 
   let data = SENT.filter(item => {
     if (filterStatus !== "semua" && item.status !== filterStatus) return false;
     if (katFil && item.kategori_group !== katFil) return false;
-    if (query && !(item.nama||"").toLowerCase().includes(query)) return false;
+    if (kotaFil && item.kota !== kotaFil) return false;
+    if (query) {
+      const gabungan = `${item.nama||""} ${item.nomor_wa||""} ${item.pesan||""}`.toLowerCase();
+      if (!gabungan.includes(query)) return false;
+    }
     return true;
   });
+
+  if (sortBy === "skor_desc") {
+    data.sort((a, b) => (b.skor_pesan||0) - (a.skor_pesan||0));
+  } else if (sortBy === "nama_asc") {
+    data.sort((a, b) => (a.nama||"").localeCompare(b.nama||""));
+  } else if (sortBy === "nama_desc") {
+    data.sort((a, b) => (b.nama||"").localeCompare(a.nama||""));
+  }
+  // "terbaru" = urutan default dari API (lead paling baru ditambahkan lebih dulu,
+  // lihat .reverse() di muatData() — tidak perlu sort tambahan di sini)
 
   const judul = {semua:"Semua Pesan", draft:"Draft — Perlu Review", pending:"Pending Kirim",
                   sent:"Sudah Dikirim", replied:"Ada Balasan", followup_due:"Perlu Follow Up"};
