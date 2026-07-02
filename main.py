@@ -19,6 +19,7 @@ Cara pakai:
     python main.py migrate-db     -> migrasi satu kali leads.json/sent.json -> outreach.db (#13)
     python main.py report         -> generate laporan PDF 7 hari terakhir
     python main.py report --hari 30 -> laporan PDF custom periode (30 hari)
+    python main.py balas <nomor> "<pesan>" -> draft balasan AI untuk lead yang reply
     python main.py build          -> jalankan builder untuk semua lead baru/followup
     python main.py build --draft  -> generate ke status draft dulu (perlu review di dashboard)
     python main.py followup       -> tandai lead 'sent' yang sudah lama belum respons
@@ -54,6 +55,12 @@ def jalankan_report():
     """Generate laporan PDF ringkasan outreach."""
     from agents import report
     report.main()
+
+
+def jalankan_balas():
+    """Draft balasan AI untuk lead yang sudah reply."""
+    from agents import reply_assistant
+    reply_assistant.main()
 
 
 def jalankan_bot():
@@ -264,6 +271,8 @@ def main():
         jalankan_migrate_db()
     elif perintah == "report":
         jalankan_report()
+    elif perintah == "balas":
+        jalankan_balas()
     elif perintah == "build":
         jalankan_build()
     elif perintah == "followup":
@@ -279,7 +288,7 @@ def main():
         jalankan_status()
     else:
         print(f"[main] Perintah '{perintah}' tidak dikenali.")
-        print("[main] Pilihan: bot | get-chatid | import | scan-websites | merge | migrate-db | report | build | build --draft | followup | status | serve | daily")
+        print("[main] Pilihan: bot | get-chatid | import | scan-websites | merge | migrate-db | report | balas | build | build --draft | followup | status | serve | daily")
 
 
 if __name__ == "__main__":

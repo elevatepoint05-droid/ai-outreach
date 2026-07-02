@@ -14,6 +14,7 @@ Commands yang tersedia:
     /followup — trigger followup saja
     /kirim <nomor> — tandai lead 'sent' setelah kirim WA manual
     /report  — generate laporan PDF 7 hari terakhir, dikirim langsung ke chat
+    /balas <nomor> <pesan> — draft balasan AI untuk lead yang reply
 
 Setup (sekali saja):
     1. Isi TELEGRAM_BOT_TOKEN di .env (dapat dari BotFather)
@@ -247,6 +248,42 @@ def handle_report(chat_id: int) -> None:
         kirim(chat_id, f"❌ Gagal membuat laporan: {e}")
 
 
+def handle_balas(chat_id: int, args: str) -> None:
+    parts = args.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        kirim(chat_id, "⚠️ Format: <code>/balas 628xxxxxxxxx pesan yang mereka kirim</code>\n\nContoh: <code>/balas 6281234567 halo boleh minta info harga</code>")
+        return
+
+    nomor_wa, pesan_masuk = parts[0], parts[1]
+    kirim(chat_id, "⏳ Menganalisis balasan & bikin draft respon...")
+
+    try:
+        try:
+            from . import reply_assistant
+        except ImportError:
+            from agents import reply_assistant
+        hasil = reply_assistant.proses_balasan(nomor_wa, pesan_masuk)
+    except Exception as e:
+        kirim(chat_id, f"❌ Error: {e}")
+        return
+
+    if hasil.get("error"):
+        kirim(chat_id, f"❌ {hasil['error']}")
+        return
+
+    nama = (hasil.get("lead") or {}).get("nama", nomor_wa)
+    wa_link = _buat_wa_link(nomor_wa, hasil["draft"])
+
+    teks = (
+        f"💬 <b>Draft balasan untuk {nama}</b>\n"
+        f"<i>Terdeteksi: {hasil['jenis_terdeteksi']}</i>\n\n"
+        f"{hasil['draft']}\n\n"
+        f"👉 <a href=\"{wa_link}\">Buka & Kirim Balasan</a>\n\n"
+        f"<i>Status sudah ditandai 'replied' otomatis.</i>"
+    )
+    kirim(chat_id, teks)
+
+
 def handle_kirim(chat_id: int, args: str) -> None:
     """
     /kirim <nomor_wa> — tandai lead sebagai 'sent' setelah lo kirim WA manual.
@@ -279,6 +316,7 @@ HELP_TEXT = (
     "/followup  — tandai lead yang perlu follow-up\n"
     "/kirim <nomor> — tandai sent setelah kirim WA manual\n"
     "/report — laporan PDF 7 hari terakhir (langsung dikirim ke chat)\n"
+    "/balas <nomor> <pesan> — draft balasan AI untuk lead yang reply\n"
     "/help      — tampilkan ini"
 )
 
@@ -357,6 +395,9 @@ def run_polling() -> None:
                 elif cmd == "/kirim":
                     args = teks[len(cmd):].strip()
                     handle_kirim(chat_id, args)
+                elif cmd == "/balas":
+                    args = teks[len(cmd):].strip()
+                    handle_balas(chat_id, args)
                 elif cmd in _COMMANDS:
                     _COMMANDS[cmd](chat_id)
                 else:

@@ -165,6 +165,23 @@ def update_sent(nomor_wa: str, **perubahan) -> bool:
     return False
 
 
+def get_sent_by_nomor(nomor_wa: str) -> dict | None:
+    """Ambil satu entri sent berdasarkan nomor_wa. Return None kalau tidak ketemu.
+    (Dipakai reply_assistant.py — butuh lookup satu record tanpa load-filter manual di caller.)"""
+    for item in muat_sent():
+        if item.get("nomor_wa") == nomor_wa:
+            return item
+    return None
+
+
+def get_lead_by_nomor(nomor_wa: str) -> dict | None:
+    """Ambil satu lead berdasarkan nomor_wa. Return None kalau tidak ketemu."""
+    for lead in muat_leads():
+        if lead.get("nomor_wa") == nomor_wa:
+            return lead
+    return None
+
+
 # ── Alias bahasa Inggris (gula sintaksis, opsional dipakai) ────────────────────
 
 get_leads = muat_leads

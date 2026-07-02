@@ -71,11 +71,14 @@ def hitung_status(sent: list[dict] | None = None) -> dict:
     return hasil
 
 
-def update_status(nomor_wa: str, status_baru: str) -> bool:
+def update_status(nomor_wa: str, status_baru: str, kirim_notif: bool = True) -> bool:
     """Ubah status satu lead berdasarkan nomor WA. Return True kalau berhasil.
 
     - Status "sent"    → catat jam_kirim (datetime ISO, bukan cuma tanggal)
     - Status "replied" → catat jam_reply + kirim notif Telegram (#5 + #17)
+      (bisa dimatikan lewat kirim_notif=False kalau caller sudah kirim
+      notifikasinya sendiri, mis. reply_assistant.py yang langsung kirim
+      draft balasan ke chat yang sama)
     """
     if status_baru not in STATUS_VALID:
         log.info(f"[tracker] Status '{status_baru}' tidak valid. Pilih dari: {', '.join(STATUS_VALID)}")
@@ -105,7 +108,7 @@ def update_status(nomor_wa: str, status_baru: str) -> bool:
     log.info(f"[tracker] Status '{nomor_wa}' diubah jadi '{status_baru}'.")
 
     # Notif Telegram kalau ada yang reply (#17)
-    if status_baru == "replied" and item_match:
+    if status_baru == "replied" and item_match and kirim_notif:
         notif.notif_replied(
             nama=item_match.get("nama", ""),
             nomor_wa=nomor_wa,
