@@ -41,9 +41,20 @@ def _tool_build_pesan(mode_draft: bool = False) -> dict:
     except ImportError:
         import builder
     sebelum = _hitung_pending_dan_draft()
-    builder.main(mode_draft=mode_draft)
+    # kirim_notif=False: agent_loop.py sudah punya format_ringkasan() sendiri
+    # yang melaporkan hasil akhir ke user, jadi tidak perlu notif individual
+    # tiap kali tool ini dipanggil (hindari spam "Build selesai" berulang).
+    builder.main(mode_draft=mode_draft, kirim_notif=False)
     sesudah = _hitung_pending_dan_draft()
-    return {"pesan_baru_dibuat": True, "pending_sebelum": sebelum, "pending_sesudah": sesudah}
+    # ada_progress: True kalau jumlah pending berubah sebelum vs sesudah.
+    # False artinya build_pesan tidak menghasilkan progress nyata — biar AI bisa
+    # lihat eksplisit dari histori dan tidak mengulang tool yang sama sia-sia.
+    return {
+        "pesan_baru_dibuat": True,
+        "pending_sebelum": sebelum,
+        "pending_sesudah": sesudah,
+        "ada_progress": sebelum != sesudah,
+    }
 
 
 def _tool_cek_followup() -> dict:

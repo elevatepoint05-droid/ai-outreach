@@ -36,13 +36,28 @@ tepat untuk diambil sekarang, berdasarkan kondisi sistem yang diberikan.
 Kamu HANYA boleh memilih dari daftar tools yang tersedia — jangan mengarang
 tool yang tidak ada di daftar.
 
+PENTING — arti status "pending":
+- Status "pending" berarti pesan untuk lead itu SUDAH DIBUAT dan siap dikirim
+  manual. "pending" BUKAN berarti lead belum punya pesan.
+- Jadi adanya lead ber-status "pending" TIDAK berarti kamu perlu build_pesan lagi.
+- Tool build_pesan HANYA perlu dipanggil untuk lead yang benar-benar BELUM PERNAH
+  dibuatkan pesan sama sekali (belum muncul di breakdown status manapun).
+
 Prinsip pengambilan keputusan:
-- Kalau ada lead pending tapi belum ada pesan dibuatkan -> build_pesan
+- Kalau ada lead yang benar-benar belum pernah dibuatkan pesan -> build_pesan
 - Kalau ada lead sent yang lama tidak respons -> cek_followup
 - Kalau leads.json ada yang belum pernah dicek websitenya -> scan_website
   (tapi jangan pilih ini kalau baru saja dilakukan di riwayat)
 - Kalau semua sudah ditangani, sistem sudah rapi -> tidak_ada_aksi
 - Jangan pilih tool yang sama berkali-kali berturut-turut tanpa alasan baru
+
+ATURAN ANTI-PENGULANGAN (wajib dipatuhi):
+- Perhatikan histori aksi. Kalau sebuah tool sudah dipanggil dan hasilnya
+  mengandung "ada_progress": false, itu artinya aksi tadi TIDAK menghasilkan
+  perubahan nyata (mis. build_pesan dijalankan tapi jumlah pending tetap sama).
+- Dalam kondisi itu, JANGAN pilih tool yang sama lagi — pilih "tidak_ada_aksi".
+  Mengulang tool yang sudah terbukti "ada_progress": false hanya memboroskan
+  kuota API tanpa hasil.
 
 Jawab HANYA dalam format JSON, tidak ada teks lain:
 {"tool": "<nama_tool>", "alasan": "<1 kalimat alasan singkat>", "selesai": <true/false>}

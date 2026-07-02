@@ -260,10 +260,16 @@ def buat_pesan(
             return isi_pesan, 0   # self-critique mati, skor = 0 (tidak diukur)
 
 
-def main(mode_draft: bool = False):
+def main(mode_draft: bool = False, kirim_notif: bool = True):
     """
     mode_draft=True  -> pesan di-generate ke status "draft" (perlu approve di dashboard dulu)
     mode_draft=False -> pesan langsung jadi "pending" (default, behaviour lama)
+
+    kirim_notif=True  -> kirim notif Telegram ringkasan build (default, behaviour lama).
+                         Dipakai oleh CLI, orchestrator, dan /build command.
+    kirim_notif=False -> skip notif individual. Dipakai HANYA oleh agent loop
+                         (_tool_build_pesan), karena agent_loop.py sudah punya
+                         format_ringkasan() sendiri yang melaporkan hasil akhir ke user.
 
     Bisa juga dipanggil lewat CLI:
         python agents/builder.py --draft
@@ -376,15 +382,18 @@ def main(mode_draft: bool = False):
     if budget_tercapai:
         log.info(f"[builder] Budget {BUDGET_DEFAULT} panggilan API/run tercapai — sisa lead diproses di run berikutnya.")
 
-    # Notif Telegram ringkasan build (#17) — dengan breakdown per kategori
-    total_pending = sum(1 for s in sent if s.get("status") in {"pending", "draft"})
-    breakdown = {"klinik": 0, "hotel": 0, "lainnya": 0}
-    for s in sent:
-        if s.get("status") in {"pending", "draft"}:
-            grup = s.get("kategori_group", "lainnya")
-            if grup in breakdown:
-                breakdown[grup] += 1
-    notif.notif_build_selesai_v2(len(pesan_baru), pesan_diperbarui, total_pending, breakdown=breakdown)
+    # Notif Telegram ringkasan build (#17) — dengan breakdown per kategori.
+    # Di-skip kalau kirim_notif=False (dipanggil dari agent loop, yang punya
+    # format_ringkasan() sendiri — tidak perlu notif individual tiap tool call).
+    if kirim_notif:
+        total_pending = sum(1 for s in sent if s.get("status") in {"pending", "draft"})
+        breakdown = {"klinik": 0, "hotel": 0, "lainnya": 0}
+        for s in sent:
+            if s.get("status") in {"pending", "draft"}:
+                grup = s.get("kategori_group", "lainnya")
+                if grup in breakdown:
+                    breakdown[grup] += 1
+        notif.notif_build_selesai_v2(len(pesan_baru), pesan_diperbarui, total_pending, breakdown=breakdown)
 
 
 if __name__ == "__main__":
