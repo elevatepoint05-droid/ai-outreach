@@ -16,6 +16,7 @@ Commands yang tersedia:
     /report  — generate laporan PDF 7 hari terakhir, dikirim langsung ke chat
     /balas <nomor> <pesan> — draft balasan AI untuk lead yang reply
     /orchestrator — cek status decision loop otomatis (ON/OFF)
+    /agentloop — trigger Think-Act-Observe loop manual (AI pilih aksi sendiri)
 
 Setup (sekali saja):
     1. Isi TELEGRAM_BOT_TOKEN di .env (dapat dari BotFather)
@@ -218,6 +219,21 @@ def _jalankan_command(chat_id: int, perintah: str) -> None:
         kirim(chat_id, f"❌ Error: {e}")
 
 
+def handle_agent_loop(chat_id: int) -> None:
+    """Trigger Think-Act-Observe loop manual dari HP — AI pilih aksi sendiri."""
+    kirim(chat_id, "🧠 Menjalankan agent loop (AI sedang berpikir)...")
+    try:
+        try:
+            from . import agent_loop
+        except ImportError:
+            from agents import agent_loop
+        histori = agent_loop.jalankan_loop(max_iterasi=5)
+        ringkasan = agent_loop.format_ringkasan(histori)
+        kirim(chat_id, ringkasan)
+    except Exception as e:
+        kirim(chat_id, f"❌ Agent loop error: {e}")
+
+
 def handle_orchestrator_status(chat_id: int) -> None:
     """Cek status orchestrator (aktif/tidak, kapan terakhir ambil aksi)."""
     try:
@@ -351,6 +367,7 @@ HELP_TEXT = (
     "/report — laporan PDF 7 hari terakhir (langsung dikirim ke chat)\n"
     "/balas <nomor> <pesan> — draft balasan AI untuk lead yang reply\n"
     "/orchestrator — cek status decision loop otomatis\n"
+    "/agentloop — trigger Think-Act-Observe loop manual (AI pilih aksi sendiri)\n"
     "/help      — tampilkan ini"
 )
 
@@ -363,6 +380,7 @@ _COMMANDS: dict[str, callable] = {
     "/followup": handle_followup,
     "/report":   handle_report,
     "/orchestrator": handle_orchestrator_status,
+    "/agentloop": handle_agent_loop,
 }
 
 

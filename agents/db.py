@@ -59,6 +59,16 @@ CREATE INDEX IF NOT EXISTS idx_leads_nomor_wa ON leads(nomor_wa);
 CREATE INDEX IF NOT EXISTS idx_leads_status   ON leads(status);
 CREATE INDEX IF NOT EXISTS idx_sent_nomor_wa  ON sent(nomor_wa);
 CREATE INDEX IF NOT EXISTS idx_sent_status    ON sent(status);
+CREATE TABLE IF NOT EXISTS agent_history (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id     TEXT NOT NULL,
+    putaran    INTEGER,
+    tool       TEXT,
+    alasan     TEXT,
+    hasil      TEXT,
+    sukses     INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -180,6 +190,44 @@ def get_lead_by_nomor(nomor_wa: str) -> dict | None:
         if lead.get("nomor_wa") == nomor_wa:
             return lead
     return None
+
+
+# ── Agent history (log Think-Act-Observe agent_loop.py, buat dashboard) ────────
+
+def log_agent_aksi(run_id: str, putaran: int, tool: str, alasan: str, hasil: dict, sukses: bool) -> None:
+    """Catat satu langkah Think-Act-Observe ke tabel agent_history."""
+    with _konek() as conn:
+        conn.execute(
+            """INSERT INTO agent_history (run_id, putaran, tool, alasan, hasil, sukses)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                putaran,
+                tool,
+                alasan,
+                json.dumps(hasil, ensure_ascii=False),
+                int(bool(sukses)),
+            ),
+        )
+
+
+def get_agent_history(limit: int = 30) -> list[dict]:
+    """Ambil riwayat aksi agent_loop.py terbaru, buat ditampilkan di dashboard."""
+    with _konek() as conn:
+        rows = conn.execute(
+            "SELECT * FROM agent_history ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+    hasil_list = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["hasil"] = json.loads(item["hasil"]) if isinstance(item["hasil"], str) else item["hasil"]
+        except Exception:
+            pass
+        item["sukses"] = bool(item["sukses"])
+        hasil_list.append(item)
+    return hasil_list
 
 
 # ── Alias bahasa Inggris (gula sintaksis, opsional dipakai) ────────────────────

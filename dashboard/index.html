@@ -379,6 +379,20 @@
   </div>
 </div>
 
+<!-- AGENT ACTIVITY LOG (Think-Act-Observe) -->
+<div class="card" style="padding:16px 20px;margin-bottom:20px;" id="agent-section">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <div style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;">
+      🧠 Agent Activity
+      <span style="font-size:11px;font-weight:400;color:var(--text-dim);">— Think → Act → Observe</span>
+    </div>
+    <button class="btn btn-ghost" onclick="muatAgentHistory()" style="font-size:11px;padding:4px 10px;">↻ Refresh</button>
+  </div>
+  <div id="agent-log-list" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;">
+    <div style="font-size:12px;color:var(--text-dim);padding:8px 0;">Belum ada aktivitas agent. Trigger lewat Telegram: <code>/agentloop</code></div>
+  </div>
+</div>
+
 <!-- TOOLBAR -->
 <div class="toolbar">
   <input type="search" id="search-input" placeholder="Cari nama / nomor WA / pesan..." oninput="render()">
@@ -476,6 +490,7 @@ async function muatData() {
     updateABStats(SENT);
     isiOpsiKota();
     render();
+    muatAgentHistory();
     document.getElementById("error-banner").style.display = "none"; // sembunyikan kalau sempat error sebelumnya
     document.getElementById("last-update").textContent =
       "Update: " + new Date().toLocaleTimeString("id-ID");
@@ -485,6 +500,41 @@ async function muatData() {
     console.error(err);
   } finally {
     sedangMuat = false;
+  }
+}
+
+// ── AGENT ACTIVITY LOG (Think-Act-Observe) ─────────────────────────────────
+async function muatAgentHistory() {
+  const container = document.getElementById("agent-log-list");
+  try {
+    const res = await fetch("/api/data/agent-history");
+    if (!res.ok) throw new Error("Response tidak OK");
+    const histori = await res.json();
+
+    if (!histori || histori.length === 0) {
+      container.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:8px 0;">Belum ada aktivitas agent. Trigger lewat Telegram: <code>/agentloop</code></div>';
+      return;
+    }
+
+    container.innerHTML = histori.map(h => {
+      const sukses = h.sukses ? "✅" : (h.tool === "tidak_ada_aksi" ? "💤" : "⚠️");
+      const waktu  = h.created_at ? new Date(h.created_at.replace(" ", "T")).toLocaleString("id-ID", {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
+      const alasan = esc(h.alasan || "");
+      const tool   = esc(h.tool || "?");
+      return `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;background:var(--panel);border:1px solid var(--panel-border);border-radius:8px;font-size:12px;">
+          <span style="flex-shrink:0;">${sukses}</span>
+          <div style="flex:1;min-width:0;">
+            <span style="font-weight:600;color:var(--accent);">${tool}</span>
+            <span style="color:var(--text-dim);"> — ${alasan}</span>
+          </div>
+          <span style="flex-shrink:0;color:var(--text-dim);font-size:11px;white-space:nowrap;">${waktu}</span>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--bounced);padding:8px 0;">Gagal memuat agent history.</div>';
+    console.error(err);
   }
 }
 

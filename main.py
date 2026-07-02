@@ -20,6 +20,7 @@ Cara pakai:
     python main.py report         -> generate laporan PDF 7 hari terakhir
     python main.py report --hari 30 -> laporan PDF custom periode (30 hari)
     python main.py balas <nomor> "<pesan>" -> draft balasan AI untuk lead yang reply
+    python main.py agent-loop     -> jalankan Think-Act-Observe loop sekali (AI pilih aksi sendiri)
     python main.py build          -> jalankan builder untuk semua lead baru/followup
     python main.py build --draft  -> generate ke status draft dulu (perlu review di dashboard)
     python main.py followup       -> tandai lead 'sent' yang sudah lama belum respons
@@ -61,6 +62,12 @@ def jalankan_balas():
     """Draft balasan AI untuk lead yang sudah reply."""
     from agents import reply_assistant
     reply_assistant.main()
+
+
+def jalankan_agent_loop():
+    """Jalankan Think-Act-Observe loop sekali — AI pilih aksi sendiri."""
+    from agents import agent_loop
+    agent_loop.main()
 
 
 def jalankan_bot():
@@ -146,6 +153,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._kirim_json(db.muat_leads())
         elif self.path == "/api/data/sent":
             self._kirim_json(db.muat_sent())
+        elif self.path == "/api/data/agent-history":
+            self._handle_get_agent_history()
         else:
             super().do_GET()
 
@@ -201,6 +210,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._kirim_json({"ok": berhasil}, 200 if berhasil else 400)
         except Exception as e:
             self._kirim_json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_get_agent_history(self):
+        """Riwayat aksi agent_loop.py (Think-Act-Observe) buat panel dashboard."""
+        try:
+            self._kirim_json(db.get_agent_history(limit=30))
+        except Exception as e:
+            self._kirim_json({"error": str(e)}, 500)
 
     def _kirim_json(self, data: dict, kode: int = 200):
         body = json.dumps(data).encode("utf-8")
@@ -273,6 +289,8 @@ def main():
         jalankan_report()
     elif perintah == "balas":
         jalankan_balas()
+    elif perintah == "agent-loop":
+        jalankan_agent_loop()
     elif perintah == "build":
         jalankan_build()
     elif perintah == "followup":
@@ -288,7 +306,7 @@ def main():
         jalankan_status()
     else:
         print(f"[main] Perintah '{perintah}' tidak dikenali.")
-        print("[main] Pilihan: bot | get-chatid | import | scan-websites | merge | migrate-db | report | balas | build | build --draft | followup | status | serve | daily")
+        print("[main] Pilihan: bot | get-chatid | import | scan-websites | merge | migrate-db | report | balas | agent-loop | build | build --draft | followup | status | serve | daily")
 
 
 if __name__ == "__main__":
