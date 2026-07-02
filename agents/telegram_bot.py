@@ -15,6 +15,7 @@ Commands yang tersedia:
     /kirim <nomor> — tandai lead 'sent' setelah kirim WA manual
     /report  — generate laporan PDF 7 hari terakhir, dikirim langsung ke chat
     /balas <nomor> <pesan> — draft balasan AI untuk lead yang reply
+    /orchestrator — cek status decision loop otomatis (ON/OFF)
 
 Setup (sekali saja):
     1. Isi TELEGRAM_BOT_TOKEN di .env (dapat dari BotFather)
@@ -217,6 +218,38 @@ def _jalankan_command(chat_id: int, perintah: str) -> None:
         kirim(chat_id, f"❌ Error: {e}")
 
 
+def handle_orchestrator_status(chat_id: int) -> None:
+    """Cek status orchestrator (aktif/tidak, kapan terakhir ambil aksi)."""
+    try:
+        from . import orchestrator
+        from . import config as cfg
+    except ImportError:
+        from agents import orchestrator
+        from agents import config as cfg
+
+    if not cfg.ORCHESTRATOR_ENABLED:
+        kirim(
+            chat_id,
+            "🧠 <b>Orchestrator: OFF</b>\n\n"
+            "Sistem masih pakai mode manual (trigger command sendiri).\n"
+            "Aktifkan di .env: <code>ORCHESTRATOR_ENABLED=true</code>, restart bot."
+        )
+        return
+
+    state = orchestrator._baca_state()
+    build_terakhir = state.get("build_harian", "belum pernah")
+
+    teks = (
+        "🧠 <b>Orchestrator: ON</b>\n\n"
+        f"Cek interval: setiap {cfg.ORCHESTRATOR_CEK_INTERVAL // 60} menit\n"
+        f"Jadwal build harian: {cfg.ORCHESTRATOR_JAM_BUILD}\n"
+        f"Build terakhir dijalankan: {build_terakhir}\n\n"
+        "<i>Bot akan otomatis build + cek follow-up tanpa perlu Task Scheduler, "
+        "selama proses ini tetap jalan.</i>"
+    )
+    kirim(chat_id, teks)
+
+
 def handle_daily(chat_id: int) -> None:
     _jalankan_command(chat_id, "daily")
 
@@ -317,6 +350,7 @@ HELP_TEXT = (
     "/kirim <nomor> — tandai sent setelah kirim WA manual\n"
     "/report — laporan PDF 7 hari terakhir (langsung dikirim ke chat)\n"
     "/balas <nomor> <pesan> — draft balasan AI untuk lead yang reply\n"
+    "/orchestrator — cek status decision loop otomatis\n"
     "/help      — tampilkan ini"
 )
 
@@ -328,6 +362,7 @@ _COMMANDS: dict[str, callable] = {
     "/build":    handle_build,
     "/followup": handle_followup,
     "/report":   handle_report,
+    "/orchestrator": handle_orchestrator_status,
 }
 
 
@@ -368,8 +403,16 @@ def run_polling() -> None:
 
     log.info(f"[telegram_bot] Bot aktif — menunggu perintah dari HP...")
 
+    # Mulai orchestrator decision loop di background (kalau diaktifkan di .env)
+    try:
+        from . import orchestrator
+    except ImportError:
+        from agents import orchestrator
+    thread_orchestrator = orchestrator.mulai_background()
+
     # Kirim notif ke HP bahwa bot baru nyala
-    kirim(TELEGRAM_CHAT_ID, "🟢 <b>AI Outreach Bot online</b>\n\nKetik /help untuk daftar command.")
+    status_orkestrator = " + Orchestrator otomatis aktif 🧠" if thread_orchestrator else ""
+    kirim(TELEGRAM_CHAT_ID, f"🟢 <b>AI Outreach Bot online</b>{status_orkestrator}\n\nKetik /help untuk daftar command.")
 
     offset = None
     while True:
@@ -407,6 +450,9 @@ def run_polling() -> None:
 
         except KeyboardInterrupt:
             log.info("[telegram_bot] Bot dihentikan.")
+            if thread_orchestrator:
+                orchestrator.berhenti()
+                log.info("[telegram_bot] Orchestrator dihentikan.")
             kirim(TELEGRAM_CHAT_ID, "🔴 Bot dihentikan.")
             break
         except Exception as e:

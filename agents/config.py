@@ -64,3 +64,8 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 # ── Server ────────────────────────────────────────────────────────────────────
 PORT_DASHBOARD = int(os.getenv("PORT_DASHBOARD", "8000"))
+
+# ── Orchestrator (decision loop otonom) ────────────────────────────────────────
+ORCHESTRATOR_ENABLED       = os.getenv("ORCHESTRATOR_ENABLED", "false").lower() == "true"
+ORCHESTRATOR_CEK_INTERVAL  = int(os.getenv("ORCHESTRATOR_CEK_INTERVAL", "1800"))
+ORCHESTRATOR_JAM_BUILD     = os.getenv("ORCHESTRATOR_JAM_BUILD", "06:00").strip()
