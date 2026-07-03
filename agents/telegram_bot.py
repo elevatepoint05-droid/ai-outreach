@@ -333,6 +333,68 @@ def handle_balas(chat_id: int, args: str) -> None:
     kirim(chat_id, teks)
 
 
+def handle_cari(chat_id: int, args: str) -> None:
+    """
+    /cari <keyword> — cari lead by nama/kota/kategori/nomor WA.
+    Cocok dipakai pas gak ada laptop, langsung dari HP cari lead tertentu.
+    """
+    keyword = args.strip().lower()
+    if not keyword:
+        kirim(chat_id, "⚠️ Format: <code>/cari klinik berau</code> atau <code>/cari 6281234567</code>")
+        return
+
+    sent = _baca_sent()
+    kata_kunci = keyword.split()
+
+    def cocok(item: dict) -> bool:
+        gabungan = " ".join(str(item.get(k, "")) for k in
+                             ["nama", "kota", "kategori", "kategori_group", "nomor_wa"]).lower()
+        return all(k in gabungan for k in kata_kunci)
+
+    hasil = [s for s in sent if cocok(s)]
+
+    if not hasil:
+        kirim(chat_id, f"🔍 Tidak ada hasil untuk \"{keyword}\".")
+        return
+
+    total = len(hasil)
+    hasil = hasil[:8]
+
+    teks = f"🔍 <b>{total} hasil untuk \"{keyword}\"</b>" + (" (8 teratas)" if total > 8 else "") + ":\n\n"
+    for i, h in enumerate(hasil, 1):
+        status = h.get("status", "?")
+        badge = {
+            "pending": "📬", "sent": "✅", "replied": "💬",
+            "draft": "✏️", "bounced": "❌", "followup_due": "🔁",
+        }.get(status, "•")
+        teks += (
+            f"{i}. {badge} <b>{h.get('nama', '?')}</b> — {h.get('kota', '-')}\n"
+            f"   📱 <code>{h.get('nomor_wa', '-')}</code> · status: {status}\n\n"
+        )
+    kirim(chat_id, teks)
+
+
+def handle_bounced(chat_id: int, args: str) -> None:
+    """
+    /bounced <nomor_wa> — tandai lead sebagai bounced (nomor gak valid/gagal kirim).
+    """
+    nomor_wa = args.strip()
+    if not nomor_wa:
+        kirim(chat_id, "⚠️ Format: <code>/bounced 628xxxxxxxxx</code>\n\nCopy nomor dari hasil /cari atau /pending.")
+        return
+
+    try:
+        from . import tracker
+    except ImportError:
+        from agents import tracker
+
+    berhasil = tracker.update_status(nomor_wa, "bounced")
+    if berhasil:
+        kirim(chat_id, f"❌ <code>{nomor_wa}</code> ditandai <b>bounced</b> (nomor gak valid/gagal kirim).")
+    else:
+        kirim(chat_id, f"⚠️ Nomor <code>{nomor_wa}</code> tidak ditemukan di sistem.")
+
+
 def handle_kirim(chat_id: int, args: str) -> None:
     """
     /kirim <nomor_wa> — tandai lead sebagai 'sent' setelah lo kirim WA manual.
@@ -364,6 +426,8 @@ HELP_TEXT = (
     "/build     — generate pesan baru saja\n"
     "/followup  — tandai lead yang perlu follow-up\n"
     "/kirim <nomor> — tandai sent setelah kirim WA manual\n"
+    "/cari <keyword> — cari lead by nama/kota/kategori/nomor\n"
+    "/bounced <nomor> — tandai nomor gak valid/gagal kirim\n"
     "/report — laporan PDF 7 hari terakhir (langsung dikirim ke chat)\n"
     "/balas <nomor> <pesan> — draft balasan AI untuk lead yang reply\n"
     "/orchestrator — cek status decision loop otomatis\n"
@@ -459,6 +523,12 @@ def run_polling() -> None:
                 elif cmd == "/balas":
                     args = teks[len(cmd):].strip()
                     handle_balas(chat_id, args)
+                elif cmd == "/cari":
+                    args = teks[len(cmd):].strip()
+                    handle_cari(chat_id, args)
+                elif cmd == "/bounced":
+                    args = teks[len(cmd):].strip()
+                    handle_bounced(chat_id, args)
                 elif cmd in _COMMANDS:
                     _COMMANDS[cmd](chat_id)
                 else:

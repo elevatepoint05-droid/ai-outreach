@@ -63,18 +63,38 @@ def _tool_cek_followup() -> dict:
         from . import tracker
     except ImportError:
         import tracker
+    # ada_progress: True kalau jumlah lead followup_due bertambah/berubah.
+    # Kalau tetap sama, artinya cek_followup tidak menandai apa-apa baru — biar
+    # AI lihat eksplisit dari histori dan tidak mengulang tool ini sia-sia.
+    sebelum = sum(1 for s in db.get_sent() if s.get("status") == "followup_due")
     jumlah = tracker.cek_followup()
-    return {"jumlah_ditandai_followup": jumlah}
+    sesudah = sum(1 for s in db.get_sent() if s.get("status") == "followup_due")
+    return {
+        "jumlah_ditandai_followup": jumlah,
+        "followup_due_sebelum": sebelum,
+        "followup_due_sesudah": sesudah,
+        "ada_progress": sebelum != sesudah,
+    }
 
 
 def _tool_scan_website(force: bool = False) -> dict:
-    """Cek lead mana yang sebenarnya sudah punya website."""
+    """Cek lead mana yang sebenarnya sudah punya website (biar tidak ditawari lagi)."""
     try:
         from . import cek_website
     except ImportError:
         import cek_website
+    # ada_progress: True kalau jumlah lead yang belum dicek websitenya berkurang.
+    # Kalau tetap sama, artinya scan tidak memproses lead baru — sinyal buat AI
+    # supaya tidak memilih scan_website berulang tanpa hasil.
+    sebelum = sum(1 for l in db.get_leads() if not l.get("website_dicek"))
     cek_website.main(dry_run=False, force=force)
-    return {"scan_selesai": True}
+    sesudah = sum(1 for l in db.get_leads() if not l.get("website_dicek"))
+    return {
+        "scan_selesai": True,
+        "belum_dicek_sebelum": sebelum,
+        "belum_dicek_sesudah": sesudah,
+        "ada_progress": sebelum != sesudah,
+    }
 
 
 def _tool_generate_report(hari: int = 7) -> dict:

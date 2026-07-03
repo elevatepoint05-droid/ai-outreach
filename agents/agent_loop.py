@@ -51,13 +51,16 @@ Prinsip pengambilan keputusan:
 - Kalau semua sudah ditangani, sistem sudah rapi -> tidak_ada_aksi
 - Jangan pilih tool yang sama berkali-kali berturut-turut tanpa alasan baru
 
-ATURAN ANTI-PENGULANGAN (wajib dipatuhi):
-- Perhatikan histori aksi. Kalau sebuah tool sudah dipanggil dan hasilnya
-  mengandung "ada_progress": false, itu artinya aksi tadi TIDAK menghasilkan
-  perubahan nyata (mis. build_pesan dijalankan tapi jumlah pending tetap sama).
-- Dalam kondisi itu, JANGAN pilih tool yang sama lagi — pilih "tidak_ada_aksi".
-  Mengulang tool yang sudah terbukti "ada_progress": false hanya memboroskan
-  kuota API tanpa hasil.
+ATURAN ANTI-PENGULANGAN (WAJIB DIPATUHI, BERLAKU UNTUK SEMUA TOOL):
+- Cek histori aksi sebelum memutuskan. Kalau ADA tool apapun (bukan cuma
+  build_pesan — termasuk cek_followup, scan_website, dan tool lainnya) yang
+  sudah dipanggil di histori dan hasilnya menunjukkan "ada_progress": false,
+  JANGAN pilih tool yang sama lagi di putaran ini. Pilih "tidak_ada_aksi" atau
+  tool lain yang berbeda.
+- "ada_progress": false artinya aksi itu TIDAK menghasilkan perubahan nyata
+  (mis. build_pesan tapi jumlah pending tetap, cek_followup tapi followup_due
+  tetap, scan_website tapi jumlah belum-dicek tetap). Mengulanginya hanya
+  memboroskan kuota API tanpa hasil.
 
 Jawab HANYA dalam format JSON, tidak ada teks lain:
 {"tool": "<nama_tool>", "alasan": "<1 kalimat alasan singkat>", "selesai": <true/false>}
