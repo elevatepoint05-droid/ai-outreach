@@ -107,6 +107,82 @@ def _tool_generate_report(hari: int = 7) -> dict:
     return {"laporan_dibuat": str(path)}
 
 
+def _tool_cek_kesehatan_sistem() -> dict:
+    """
+    Self-diagnostic — cek beberapa pola masalah umum di sistem, hal-hal
+    yang biasanya baru ketauan pas user 'kepo' manual.
+    """
+    masalah_ditemukan = []
+
+    try:
+        from . import config as cfg
+    except ImportError:
+        import config as cfg
+
+    portfolio = getattr(cfg, "PORTFOLIO_URL", "")
+    pola_placeholder = ["contoh.website", "example.com", "yourwebsite", "placeholder", "domain-anda"]
+    if portfolio and any(p in portfolio.lower() for p in pola_placeholder):
+        masalah_ditemukan.append(
+            f"PORTFOLIO_URL berisi placeholder ('{portfolio}'), bukan link asli — "
+            f"pesan yang dikirim ke lead akan menyertakan link palsu."
+        )
+
+    try:
+        histori_terbaru = db.get_agent_history(limit=5)
+        if len(histori_terbaru) >= 3:
+            run_id_terbaru = histori_terbaru[0].get("run_id")
+            entri_run_sama = [h for h in histori_terbaru if h.get("run_id") == run_id_terbaru]
+            tools_dipanggil = [h.get("tool") for h in entri_run_sama]
+            for t in set(tools_dipanggil):
+                if tools_dipanggil.count(t) >= 3 and t != "tidak_ada_aksi":
+                    masalah_ditemukan.append(
+                        f"Tool '{t}' terpanggil {tools_dipanggil.count(t)}x berturut-turut "
+                        f"di run terakhir — kemungkinan ada loop pengulangan yang tidak semestinya."
+                    )
+    except Exception:
+        pass
+
+    if not getattr(cfg, "GROQ_API_KEY", ""):
+        masalah_ditemukan.append("GROQ_API_KEY kosong — fitur generate pesan/laporan tidak akan berfungsi.")
+
+    try:
+        from . import tracker
+        status_valid = tracker.STATUS_VALID
+    except Exception:
+        status_valid = {"draft", "pending", "sent", "replied", "bounced", "followup_due"}
+
+    sent = db.get_sent()
+    status_aneh = set(s.get("status") for s in sent if s.get("status") not in status_valid)
+    if status_aneh:
+        masalah_ditemukan.append(f"Ada lead dengan status tidak dikenal: {status_aneh}")
+
+    # Kirim notif Telegram langsung kalau ada masalah — TIDAK bergantung ke
+    # histori agent_loop yang dipotong 150 char, jadi detail masalah utuh
+    # sampai ke user. Kalau sistem sehat, sengaja TIDAK kirim apa-apa biar
+    # tidak spam tiap /agentloop jalan dan semua baik-baik saja.
+    if masalah_ditemukan:
+        try:
+            from . import notif
+        except ImportError:
+            import notif
+        baris = [f"{i}. {m}" for i, m in enumerate(masalah_ditemukan, 1)]
+        teks = (
+            "⚠️ <b>Sistem Health Check</b> — Ditemukan masalah:\n\n"
+            + "\n".join(baris)
+            + "\n\nIni butuh dibenerin manual (edit .env atau cek kode)."
+        )
+        try:
+            notif.kirim(teks)
+        except Exception as e:
+            log.warning(f"[tool_registry] Gagal kirim notif health check: {e}")
+
+    return {
+        "jumlah_masalah": len(masalah_ditemukan),
+        "masalah": masalah_ditemukan,
+        "sistem_sehat": len(masalah_ditemukan) == 0,
+    }
+
+
 def _tool_tidak_ada_aksi() -> dict:
     """Tidak melakukan apa-apa — dipilih kalau kondisi sistem sudah baik."""
     return {"info": "Tidak ada aksi yang diperlukan saat ini."}
@@ -144,6 +220,16 @@ TOOLS: dict[str, dict[str, Any]] = {
     "generate_report": {
         "deskripsi": "Bikin laporan PDF ringkasan performa outreach untuk periode tertentu.",
         "fungsi": _tool_generate_report,
+        "butuh_args": [],
+        "kategori": "aman",
+    },
+    "cek_kesehatan_sistem": {
+        "deskripsi": "Self-diagnostic — cek apakah ada masalah tersembunyi di sistem "
+                     "(placeholder link yang belum diisi, tool yang loop tanpa progress, "
+                     "API key kosong, status data tidak dikenal). Jalankan ini SEBELUM "
+                     "memilih tool lain kalau baru pertama kali putaran, atau kalau curiga "
+                     "ada yang tidak beres.",
+        "fungsi": _tool_cek_kesehatan_sistem,
         "butuh_args": [],
         "kategori": "aman",
     },
