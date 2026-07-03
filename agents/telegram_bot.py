@@ -395,9 +395,29 @@ def handle_bounced(chat_id: int, args: str) -> None:
         kirim(chat_id, f"⚠️ Nomor <code>{nomor_wa}</code> tidak ditemukan di sistem.")
 
 
+def handle_ratecheck(chat_id: int) -> None:
+    """Cek manual kecepatan pengiriman WA sekarang (rate_guard)."""
+    try:
+        from . import rate_guard
+    except ImportError:
+        from agents import rate_guard
+
+    status = rate_guard.cek_kecepatan_kirim()
+    emoji = {"aman": "✅", "waspada": "⚡", "bahaya": "🚨"}.get(status["level"], "❓")
+
+    teks = (
+        f"{emoji} <b>Rate Check — Kecepatan Kirim WA</b>\n\n"
+        f"{status['pesan']}\n\n"
+        f"<i>Threshold: max {rate_guard.BATAS_PER_JAM}/jam, "
+        f"{rate_guard.BATAS_PER_HARI}/hari sebelum 'waspada'.</i>"
+    )
+    kirim(chat_id, teks)
+
+
 def handle_kirim(chat_id: int, args: str) -> None:
     """
     /kirim <nomor_wa> — tandai lead sebagai 'sent' setelah lo kirim WA manual.
+    Sekaligus cek kecepatan pengiriman (rate_guard).
     """
     nomor_wa = args.strip()
     if not nomor_wa:
@@ -405,15 +425,22 @@ def handle_kirim(chat_id: int, args: str) -> None:
         return
 
     try:
-        from . import tracker
+        from . import tracker, rate_guard
     except ImportError:
-        from agents import tracker
+        from agents import tracker, rate_guard
 
     berhasil = tracker.update_status(nomor_wa, "sent")
-    if berhasil:
-        kirim(chat_id, f"✅ <code>{nomor_wa}</code> ditandai <b>sent</b>.")
-    else:
+    if not berhasil:
         kirim(chat_id, f"❌ Nomor <code>{nomor_wa}</code> tidak ditemukan di sistem.")
+        return
+
+    rate_guard.catat_kirim(nomor_wa)
+    status_rate = rate_guard.cek_kecepatan_kirim()
+
+    teks = f"✅ <code>{nomor_wa}</code> ditandai <b>sent</b>."
+    if status_rate["level"] != "aman":
+        teks += f"\n\n{status_rate['pesan']}"
+    kirim(chat_id, teks)
 
 
 HELP_TEXT = (
@@ -426,6 +453,7 @@ HELP_TEXT = (
     "/build     — generate pesan baru saja\n"
     "/followup  — tandai lead yang perlu follow-up\n"
     "/kirim <nomor> — tandai sent setelah kirim WA manual\n"
+    "/ratecheck — cek kecepatan kirim WA (resiko kena restriksi)\n"
     "/cari <keyword> — cari lead by nama/kota/kategori/nomor\n"
     "/bounced <nomor> — tandai nomor gak valid/gagal kirim\n"
     "/report — laporan PDF 7 hari terakhir (langsung dikirim ke chat)\n"
@@ -443,6 +471,7 @@ _COMMANDS: dict[str, callable] = {
     "/build":    handle_build,
     "/followup": handle_followup,
     "/report":   handle_report,
+    "/ratecheck": handle_ratecheck,
     "/orchestrator": handle_orchestrator_status,
     "/agentloop": handle_agent_loop,
 }

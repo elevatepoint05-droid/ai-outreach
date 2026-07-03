@@ -249,6 +249,19 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             berhasil = tracker.update_status(nomor_wa, status_baru)
+
+            # Rate tracking — catat pengiriman HANYA saat status baru = "sent",
+            # biar rate_guard akurat baik user mark 'sent' dari Telegram (/kirim)
+            # maupun dari dashboard ini. Dibungkus try/except & fail-silently:
+            # update status DB lebih penting daripada rate tracking, jadi kalau
+            # rate_guard gagal impor/error, endpoint TIDAK ikut gagal.
+            if berhasil and status_baru == "sent":
+                try:
+                    from agents import rate_guard
+                    rate_guard.catat_kirim(nomor_wa)
+                except Exception as e:
+                    print(f"[serve] Rate guard gagal catat kirim (tidak fatal): {e}")
+
             self._kirim_json({"ok": berhasil}, 200 if berhasil else 400)
         except Exception as e:
             self._kirim_json({"ok": False, "error": str(e)}, 500)

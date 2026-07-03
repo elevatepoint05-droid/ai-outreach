@@ -61,6 +61,11 @@ ATURAN ANTI-PENGULANGAN (WAJIB DIPATUHI, BERLAKU UNTUK SEMUA TOOL):
   (mis. build_pesan tapi jumlah pending tetap, cek_followup tapi followup_due
   tetap, scan_website tapi jumlah belum-dicek tetap). Mengulanginya hanya
   memboroskan kuota API tanpa hasil.
+- Kalau sudah mencoba tool yang sama dan tetap dapat "ada_progress": false
+  BERULANG KALI, atau kondisi tidak sesuai dengan aturan manapun yang
+  dijelaskan di atas — pilih "eskalasi" dan jelaskan kenapa di parameter
+  "alasan", JANGAN terus mencoba tool lain secara acak. Lebih baik jujur
+  bilang tidak yakin dan minta keputusan manusia daripada asal menebak.
 
 Jawab HANYA dalam format JSON, tidak ada teks lain:
 {"tool": "<nama_tool>", "alasan": "<1 kalimat alasan singkat>", "selesai": <true/false>}
@@ -161,7 +166,12 @@ def jalankan_loop(max_iterasi: int = 5) -> list[dict]:
 
         log.info(f"[agent_loop] THINK -> pilih '{nama_tool}': {alasan}")
 
-        hasil_eksekusi = tool_registry.eksekusi_tool(nama_tool)
+        # ACT — pass argumen dinamis berdasarkan butuh_args tool (misal 'alasan'
+        # buat tool eskalasi, yang sudah ada di JSON keputusan AI).
+        tool_info    = tool_registry.TOOLS.get(nama_tool, {})
+        butuh_args   = tool_info.get("butuh_args", [])
+        kwargs_tool  = {arg: keputusan.get(arg, "") for arg in butuh_args if arg in keputusan}
+        hasil_eksekusi = tool_registry.eksekusi_tool(nama_tool, **kwargs_tool)
 
         entri_histori = {
             "putaran": putaran,
@@ -194,8 +204,10 @@ def format_ringkasan(histori: list[dict]) -> str:
     if not histori:
         return "Tidak ada aksi yang diambil."
 
-    aksi_nyata = [h for h in histori if h["tool"] != "tidak_ada_aksi"]
+    aksi_nyata = [h for h in histori if h["tool"] not in ("tidak_ada_aksi", "eskalasi")]
     if not aksi_nyata:
+        if any(h["tool"] == "eskalasi" for h in histori):
+            return "🙋 Agent loop mengeskalasi ke kamu — cek notif eskalasi di atas."
         return "🧠 Agent loop jalan, tapi tidak ada aksi yang diperlukan saat ini."
 
     baris = ["🧠 <b>Agent loop mengambil keputusan:</b>\n"]

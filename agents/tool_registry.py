@@ -270,6 +270,33 @@ def _tool_cek_kesehatan_sistem() -> dict:
     }
 
 
+def _tool_eskalasi(alasan: str = "") -> dict:
+    """
+    Eskalasi — AI 'nyerah dengan elegan' dan minta keputusan manusia,
+    BUKAN nebak-nebak terus. Beda dari tidak_ada_aksi (artinya 'semua
+    beres'), eskalasi artinya 'saya tidak yakin/stuck, butuh manusia'.
+    """
+    try:
+        from . import notif
+    except ImportError:
+        import notif
+
+    alasan_final = alasan.strip() if alasan else "AI tidak menyebutkan alasan spesifik."
+
+    try:
+        notif.kirim(
+            f"🙋 <b>Agent Loop Eskalasi</b>\n\n"
+            f"AI memilih untuk TIDAK melanjutkan otomatis dan minta keputusan kamu:\n\n"
+            f"{alasan_final}\n\n"
+            f"<i>Ini bukan error — ini AI yang 'jujur' bilang tidak yakin, "
+            f"daripada asal nebak aksi.</i>"
+        )
+    except Exception:
+        pass
+
+    return {"dieskalasi": True, "alasan": alasan_final}
+
+
 def _tool_tidak_ada_aksi() -> dict:
     """Tidak melakukan apa-apa — dipilih kalau kondisi sistem sudah baik."""
     return {"info": "Tidak ada aksi yang diperlukan saat ini."}
@@ -328,6 +355,17 @@ TOOLS: dict[str, dict[str, Any]] = {
                      "ada yang tidak beres.",
         "fungsi": _tool_cek_kesehatan_sistem,
         "butuh_args": [],
+        "kategori": "aman",
+    },
+    "eskalasi": {
+        "deskripsi": "Pilih ini kalau kamu TIDAK YAKIN aksi apa yang tepat, atau "
+                     "sudah coba beberapa tool tapi tidak ada progress (ada_progress: "
+                     "false berulang), atau menemukan situasi yang di luar aturan yang "
+                     "diberikan. LEBIH BAIK eskalasi dan tanya user daripada asal menebak "
+                     "atau mengulang tool yang sama tanpa hasil. Sertakan alasan spesifik "
+                     "di parameter 'alasan'.",
+        "fungsi": _tool_eskalasi,
+        "butuh_args": ["alasan"],
         "kategori": "aman",
     },
     "tidak_ada_aksi": {
