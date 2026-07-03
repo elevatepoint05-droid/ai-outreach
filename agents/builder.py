@@ -222,6 +222,16 @@ def buat_pesan(
             konteks_user += f"Sudut pandang: {sudut_pandang}\n"
         if PORTFOLIO_URL:
             konteks_user += f"Contoh website yang sudah pernah dibuat: {PORTFOLIO_URL}\n"
+        # Sub-agent riset (opsional) — insight tambahan dari rating/alamat
+        # yang selama ini belum dimanfaatkan. Read-only, degradasi aman
+        # kalau gagal (insight None, proses generate pesan tetap lanjut).
+        try:
+            from . import sub_agent_research
+        except ImportError:
+            import sub_agent_research
+        insight = sub_agent_research.riset_lead(lead)
+        if insight:
+            konteks_user += f"Insight riset (opsional, pakai kalau relevan): {insight}\n"
         konteks_user += f"Instruksi tambahan: {ab_instruksi}\n"
         konteks_user += "Tulis pesan WhatsApp penawaran jasa pembuatan website untuk bisnis ini."
         sistem = PROMPT_SISTEM

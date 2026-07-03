@@ -30,6 +30,8 @@ Cara pakai:
     python main.py                -> jalankan build lalu tampilkan ringkasan status
 """
 
+import base64
+import hmac
 import json
 import sys
 import http.server
@@ -37,7 +39,7 @@ import socketserver
 from pathlib import Path
 
 from agents import builder, tracker, db
-from agents.config import PORT_DASHBOARD
+from agents.config import PORT_DASHBOARD, DASHBOARD_PASSWORD
 
 
 def jalankan_merge():
@@ -148,7 +150,45 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
       lewat tracker.py.
     """
 
+    def _cek_auth(self) -> bool:
+        """
+        Gerbang autentikasi. Return True kalau request boleh dilanjutkan.
+
+        - Kalau DASHBOARD_PASSWORD kosong (default, pemakaian lokal): selalu
+          True — tidak ada breaking change buat yang belum butuh auth.
+        - Kalau DASHBOARD_PASSWORD diset: wajib HTTP Basic Auth dengan password
+          yang cocok. Kalau belum/salah, fungsi ini SUDAH mengirim response 401
+          (plus header WWW-Authenticate biar browser munculin dialog login)
+          lalu return False — caller cukup `return`.
+
+        Password dibandingkan pakai hmac.compare_digest (timing-safe).
+        Username diabaikan (boleh apa saja) — yang dicek cuma password.
+        """
+        if not DASHBOARD_PASSWORD:
+            return True
+
+        header = self.headers.get("Authorization", "")
+        if header.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(header[6:]).decode("utf-8", "replace")
+                _, _, pw = decoded.partition(":")
+                if hmac.compare_digest(pw, DASHBOARD_PASSWORD):
+                    return True
+            except Exception:
+                pass
+
+        pesan = b"401 Unauthorized - dashboard butuh login."
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="AI Outreach Dashboard"')
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(pesan)))
+        self.end_headers()
+        self.wfile.write(pesan)
+        return False
+
     def do_GET(self):
+        if not self._cek_auth():
+            return
         if self.path == "/api/data/leads":
             self._kirim_json(db.muat_leads())
         elif self.path == "/api/data/sent":
@@ -159,6 +199,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
+        if not self._cek_auth():
+            return
         if self.path == "/api/update-status":
             self._handle_update_status()
         elif self.path == "/api/update-pesan":
@@ -238,9 +280,28 @@ def jalankan_serve():
     fetch data lead/sent lewat GET /api/data/leads dan /api/data/sent
     (data/outreach.db), sekaligus update status lead lewat endpoint
     POST /api/update-status.
+
+    KEAMANAN:
+    - Server bind ke 127.0.0.1 (localhost) saja, BUKAN "" (semua interface).
+      Artinya hanya bisa diakses dari komputer ini — orang lain di WiFi/LAN
+      yang sama TIDAK bisa mengintip nomor WA / isi pesan lead.
+    - Set DASHBOARD_PASSWORD di .env untuk mengaktifkan HTTP Basic Auth.
+
+    DEPLOY KE VPS (penting):
+    - JANGAN expose PORT_DASHBOARD langsung ke internet. Karena server bind ke
+      127.0.0.1, dari luar VPS port ini tidak terjangkau — itu memang disengaja.
+    - Akses dashboard di VPS HARUS lewat reverse proxy (nginx) dengan HTTPS +
+      auth di depannya. Nginx listen 443 (TLS), lalu proxy_pass ke
+      http://127.0.0.1:PORT_DASHBOARD. Set juga DASHBOARD_PASSWORD sebagai
+      lapisan auth kedua di aplikasi.
     """
-    with socketserver.TCPServer(("", PORT_DASHBOARD), DashboardHandler) as httpd:
+    with socketserver.TCPServer(("127.0.0.1", PORT_DASHBOARD), DashboardHandler) as httpd:
         print(f"[main] Dashboard tersedia di http://localhost:{PORT_DASHBOARD}/dashboard/")
+        if DASHBOARD_PASSWORD:
+            print("[main] 🔒 Auth AKTIF — dashboard butuh login (DASHBOARD_PASSWORD diset).")
+        else:
+            print("[main] ⚠️  Auth NONAKTIF (DASHBOARD_PASSWORD kosong) — aman untuk lokal, "
+                  "tapi WAJIB diisi sebelum deploy VPS.")
         print("[main] Tekan Ctrl+C untuk berhenti.")
         try:
             httpd.serve_forever()

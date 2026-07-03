@@ -65,6 +65,15 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 # ── Server ────────────────────────────────────────────────────────────────────
 PORT_DASHBOARD = int(os.getenv("PORT_DASHBOARD", "8000"))
 
+# Password dashboard (HTTP Basic Auth). Default kosong = TIDAK ada auth
+# (pemakaian lokal, backward compatible). WAJIB diisi sebelum deploy ke VPS.
+# Server tetap bind ke 127.0.0.1 saja — untuk VPS akses lewat reverse proxy
+# (nginx) dengan HTTPS, jangan expose PORT_DASHBOARD langsung ke internet.
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
+
+# ── Sub-agent riset (opsional, 1 API call ekstra per lead) ────────────────────
+RESEARCH_SUBAGENT_ENABLED = os.getenv("RESEARCH_SUBAGENT_ENABLED", "false").lower() == "true"
+
 # ── Orchestrator (decision loop otonom) ────────────────────────────────────────
 ORCHESTRATOR_ENABLED       = os.getenv("ORCHESTRATOR_ENABLED", "false").lower() == "true"
 ORCHESTRATOR_CEK_INTERVAL  = int(os.getenv("ORCHESTRATOR_CEK_INTERVAL", "1800"))

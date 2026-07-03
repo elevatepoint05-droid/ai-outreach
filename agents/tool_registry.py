@@ -4,6 +4,7 @@ tool_registry.py
 Daftar "tools" yang bisa dipilih oleh agent loop.
 """
 
+from pathlib import Path
 from typing import Any, Callable
 
 try:
@@ -105,6 +106,92 @@ def _tool_generate_report(hari: int = 7) -> dict:
         import report
     path = report.generate(hari=hari)
     return {"laporan_dibuat": str(path)}
+
+
+def _tool_cek_keamanan_sistem() -> dict:
+    """
+    Security check — versi khusus keamanan dari cek_kesehatan_sistem.
+    Sifatnya 'ketat tapi fleksibel': scan dan LAPORKAN semua celah yang
+    ketemu (ketat), tapi TIDAK block/ubah apapun secara otomatis.
+    """
+    import subprocess
+    temuan = []
+
+    try:
+        from . import config as cfg
+    except ImportError:
+        import config as cfg
+
+    base_dir = Path(__file__).resolve().parent.parent
+
+    # 1. Cek .env pernah ke-commit ke git history
+    try:
+        hasil_git = subprocess.run(
+            ["git", "-C", str(base_dir), "log", "--all", "--oneline", "--", ".env"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if hasil_git.returncode == 0 and hasil_git.stdout.strip():
+            temuan.append({
+                "level": "KRITIS",
+                "masalah": ".env pernah ke-commit ke git history! Secret (API key, bot token) "
+                           "sudah tersimpan permanen di history, bahkan kalau file dihapus sekarang.",
+                "saran": "Rotate SEMUA secret (Groq API key, Telegram bot token) segera, "
+                         "lalu pertimbangkan bersihkan git history (git filter-repo).",
+            })
+    except Exception:
+        pass
+
+    # 2. Cek .env ada di .gitignore
+    gitignore_path = base_dir / ".gitignore"
+    if gitignore_path.exists():
+        isi_gitignore = gitignore_path.read_text()
+        if ".env" not in isi_gitignore:
+            temuan.append({
+                "level": "TINGGI",
+                "masalah": ".env TIDAK ada di .gitignore — resiko ke-commit tanpa sengaja.",
+                "saran": "Tambahkan baris '.env' ke file .gitignore.",
+            })
+    else:
+        temuan.append({
+            "level": "TINGGI",
+            "masalah": ".gitignore tidak ditemukan sama sekali.",
+            "saran": "Buat .gitignore, minimal exclude .env dan file data (leads.json, outreach.db).",
+        })
+
+    # 3. Cek DASHBOARD_PASSWORD
+    dashboard_password = getattr(cfg, "DASHBOARD_PASSWORD", None)
+    if dashboard_password == "" or dashboard_password is None:
+        temuan.append({
+            "level": "SEDANG",
+            "masalah": "Dashboard belum diproteksi password. Aman untuk pemakaian lokal "
+                       "di laptop sendiri, TAPI WAJIB diisi sebelum deploy ke VPS/server publik.",
+            "saran": "Set DASHBOARD_PASSWORD di .env sebelum deploy ke server yang bisa "
+                     "diakses dari internet.",
+        })
+
+    # 4. Cek secret hardcoded di kode (bukan di .env)
+    try:
+        import re
+        pola_secret = re.compile(r'gsk_[A-Za-z0-9]{20,}|[0-9]{8,10}:[A-Za-z0-9_-]{30,}')
+        file_dicek = ["main.py"] + [str(p) for p in (base_dir / "agents").glob("*.py")]
+        for nama_file in file_dicek:
+            path_file = base_dir / nama_file if not nama_file.startswith(str(base_dir)) else Path(nama_file)
+            if path_file.exists():
+                isi = path_file.read_text(errors="ignore")
+                if pola_secret.search(isi):
+                    temuan.append({
+                        "level": "KRITIS",
+                        "masalah": f"Kemungkinan API key/token ter-hardcode langsung di {path_file.name}.",
+                        "saran": f"Cek isi {path_file.name}, pastikan semua secret diambil dari os.getenv().",
+                    })
+    except Exception:
+        pass
+
+    return {
+        "jumlah_temuan": len(temuan),
+        "temuan": temuan,
+        "aman": len(temuan) == 0,
+    }
 
 
 def _tool_cek_kesehatan_sistem() -> dict:
@@ -220,6 +307,16 @@ TOOLS: dict[str, dict[str, Any]] = {
     "generate_report": {
         "deskripsi": "Bikin laporan PDF ringkasan performa outreach untuk periode tertentu.",
         "fungsi": _tool_generate_report,
+        "butuh_args": [],
+        "kategori": "aman",
+    },
+    "cek_keamanan_sistem": {
+        "deskripsi": "Security check — cek celah keamanan spesifik (secret ke-expose "
+                     "di git history, .env tidak di-gitignore, dashboard tanpa password, "
+                     "API key hardcoded di kode). Beda dari cek_kesehatan_sistem yang "
+                     "fokus ke bug fungsional, ini khusus fokus ke resiko keamanan. "
+                     "Jalankan ini terutama sebelum rencana deploy ke server/VPS.",
+        "fungsi": _tool_cek_keamanan_sistem,
         "butuh_args": [],
         "kategori": "aman",
     },
