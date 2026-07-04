@@ -63,27 +63,38 @@ BUDGET_DEFAULT = cfg.GROQ_MAX_CALLS
 # Kalau kosong, pesan tidak menyebut link (tetap jalan normal).
 PORTFOLIO_URL = cfg.PORTFOLIO_URL
 
-PROMPT_SISTEM = """Kamu adalah seorang web developer freelance yang sopan dan profesional.
-Tugasmu menulis pesan WhatsApp singkat untuk menawarkan jasa pembuatan website
-ke pemilik UMKM yang belum punya website.
+PROMPT_SISTEM = """Kamu adalah seorang web developer freelance di Indonesia.
+Tugasmu menulis pesan WhatsApp pertama yang tujuannya BUKAN langsung jualan,
+tapi bikin pemilik bisnis REPLY dulu — apapun balasannya.
 
-Contoh nada yang diinginkan (jangan ditiru kata-per-kata, tapi ikuti gaya dan alurnya):
-"Selamat siang, saya melihat [nama_bisnis] di [kota] bergerak di bidang [kategori].
-Saya web developer yang membantu UMKM membuat website terjangkau agar lebih mudah
-ditemukan pelanggan secara online. Apakah Bapak/Ibu berkenan untuk diskusi singkat?"
+Filosofi "teaser first":
+Pesan pertama yang langsung menawarkan jasa -> mudah diabaikan / di-report spam.
+Pesan pertama yang bikin penasaran atau minta konfirmasi kecil -> reply rate jauh lebih tinggi.
+Begitu mereka reply, baru percakapan bisa dilanjutkan ke arah obrolan yang lebih serius.
 
-Aturan:
-- Gunakan "saya" (bukan "gw"/"aku"), sapa pemilik dengan "Bapak/Ibu" atau sebut nama bisnisnya.
-- Bahasa Indonesia baku ringan — sopan dan hangat, bukan kaku seperti surat resmi, bukan gaul.
-- Sebut nama bisnis, kota, dan kategori usaha sesuai data yang diberikan — jangan diulang berlebihan.
-- HANYA gunakan informasi yang ada di data (nama bisnis, kota, kategori). JANGAN mengarang nama pemilik, jumlah pelanggan, atau detail lain yang tidak diberikan.
-- Jangan pakai emoji (hindari sama sekali).
-- Panjang pesan 2-3 kalimat singkat, langsung ke poin.
-- Jangan sebut harga spesifik, cukup "terjangkau" lalu ajak diskusi.
-- Tutup dengan ajakan diskusi yang sopan (contoh: "Apakah Bapak/Ibu berkenan..." atau variasinya).
-- Variasikan kalimat pembuka antar pesan, jangan selalu sama persis.
-- Kalau ada "Sudut pandang" di data, jadikan itu alasan utama kenapa bisnis ini butuh website — jangan disebut sebagai kalimat terpisah, tenun jadi alami.
-- Kalau ada "Contoh website" di data, selipin linknya secara alami di akhir pesan (mis. "Bisa lihat contoh di [link].") — jangan taruh di awal, jangan memaksa.
+Contoh pendekatan yang EFEKTIF (pahami polanya, jangan ditiru kata-per-kata):
+A. Konfirmasi sederhana:
+   "Halo Bapak/Ibu dari [nama bisnis], saya lagi cari referensi [kategori] di [kota] --
+   [nama bisnis] masih aktif melayani ya?"
+
+B. Pseudo-audit (pendekatan value-first):
+   "Selamat pagi, saya cek [nama bisnis] di Google Maps dan belum nemu website-nya.
+   Apa memang sengaja tidak pakai website, atau belum sempat bikin?"
+
+C. Curiosity hook dari data spesifik:
+   "Halo dari [nama bisnis], lihat rating-nya bagus -- bisnis ramai ya?
+   Selama ini pelanggan baru biasanya dapet info dari mana?"
+
+Aturan WAJIB:
+- Gunakan "saya", sapa dengan "Bapak/Ibu" atau nama bisnisnya langsung.
+- Bahasa Indonesia sopan tapi ringan -- bukan kaku, bukan gaul.
+- Maksimal 2 kalimat. Lebih pendek = lebih natural.
+- JANGAN sebut kata "website", "jasa", "harga", "tawaran", atau kata-kata sales apapun.
+- JANGAN pakai emoji.
+- JANGAN tanya "apakah tertarik?" atau "apakah berkenan?" -- itu ciri pesan sales.
+- HANYA pakai info yang ada di data. JANGAN mengarang detail yang tidak diberikan.
+- Kalau ada "Data tambahan" (rating) atau "Insight riset" di data, pakai itu untuk memperkuat hook.
+- Tujuan satu-satunya: bikin mereka reply satu kalimat apapun.
 - Output HANYA isi pesannya, tanpa tanda kutip atau penjelasan tambahan."""
 
 PROMPT_SISTEM_FOLLOWUP = """Kamu adalah seorang web developer freelance yang sopan dan profesional.
@@ -104,12 +115,13 @@ Aturan:
 # supaya pesan terasa relevan, bukan template generik yang sama untuk semua bisnis.
 SUDUT_PANDANG = {
     "klinik": (
-        "Pasien sekarang biasa cari klinik/dokter dulu lewat Google sebelum datang. "
-        "Website bikin lebih mudah ditemukan & dipercaya, bisa cantumkan jam praktik dan layanan."
+        "Pakai pendekatan pseudo-audit atau konfirmasi: tanya cara mereka dapat "
+        "pasien baru sekarang, atau tanya kenapa belum ada di Google. "
+        "Jangan sebut website atau jasa di pesan pertama."
     ),
     "hotel": (
-        "Wisatawan dan tamu dari luar kota sekarang booking penginapan lewat Google/website dulu "
-        "sebelum WA langsung. Website bikin lebih profesional dan gampang ditemukan turis."
+        "Pakai pendekatan curiosity: tanya cara tamu dari luar kota biasanya "
+        "nemuin penginapan mereka. Bikin mereka cerita dulu."
     ),
     "lainnya": "",
 }
@@ -121,12 +133,19 @@ SUDUT_PANDANG = {
 # supaya bisa dihitung reply rate per template di dashboard.
 AB_TEMPLATES = {
     "A": (
-        "Nada: fokus masalah — sampaikan bahwa tanpa website bisnis ini susah "
-        "ditemukan calon pelanggan baru yang cari lewat Google, lalu tawarkan solusi terjangkau."
+        "Pendekatan: konfirmasi sederhana — tanya satu hal yang bikin mereka "
+        "harus jawab (masih aktif, masih buka, dll). "
+        "Jangan sebut website atau jasa sama sekali."
     ),
     "B": (
-        "Nada: fokus peluang — sampaikan bahwa dengan website sederhana bisnis ini "
-        "bisa menjangkau lebih banyak pelanggan dan terlihat lebih profesional, lalu ajak diskusi."
+        "Pendekatan: pseudo-audit — sampaikan lo cek bisnis mereka dan "
+        "tanya kenapa belum ada online presence, nada netral bukan judging. "
+        "Bikin mereka jelasin situasi mereka sendiri."
+    ),
+    "C": (
+        "Pendekatan: curiosity hook dari data spesifik — kalau ada rating tinggi "
+        "atau kategori spesifik, jadikan itu hook genuine yang bikin mereka mau reply. "
+        "Tutup dengan pertanyaan terbuka yang ringan."
     ),
 }
 
@@ -201,9 +220,16 @@ def buat_pesan(
     - mode "followup" -> pesan follow-up
     - template_id     -> "A" atau "B" (diabaikan untuk followup)
     """
+    # Sanitasi data lead sebelum dipakai di prompt
+    try:
+        from . import data_sanitizer
+    except ImportError:
+        import data_sanitizer
+    lead_bersih = data_sanitizer.sanitasi_lead(lead)
+
     if mode == "followup":
         konteks_user = (
-            f"Nama bisnis: {lead.get('nama')}\n"
+            f"Nama bisnis: {lead_bersih['nama_display']}\n"
             f"Kategori usaha: {lead.get('kategori', 'tidak diketahui')}\n"
             f"Lokasi: {lead.get('kota', lead.get('alamat', 'tidak diketahui'))}\n"
             "Tulis pesan follow-up WA untuk bisnis ini (sudah pernah ditawari sebelumnya, belum dibalas)."
@@ -214,10 +240,14 @@ def buat_pesan(
         sudut_pandang = SUDUT_PANDANG.get(grup, "")
         ab_instruksi  = AB_TEMPLATES.get(template_id, AB_TEMPLATES["A"])
         konteks_user = (
-            f"Nama bisnis: {lead.get('nama')}\n"
+            f"Nama bisnis: {lead_bersih['nama_display']}\n"
             f"Kategori usaha: {lead.get('kategori', 'tidak diketahui')}\n"
             f"Lokasi: {lead.get('kota', lead.get('alamat', 'tidak diketahui'))}\n"
         )
+        if lead_bersih['rating_display']:
+            konteks_user += f"Data tambahan: {lead_bersih['rating_display']}\n"
+        if lead_bersih['alamat_display']:
+            konteks_user += f"Alamat: {lead_bersih['alamat_display']}\n"
         if sudut_pandang:
             konteks_user += f"Sudut pandang: {sudut_pandang}\n"
         if PORTFOLIO_URL:
@@ -233,7 +263,7 @@ def buat_pesan(
         if insight:
             konteks_user += f"Insight riset (opsional, pakai kalau relevan): {insight}\n"
         konteks_user += f"Instruksi tambahan: {ab_instruksi}\n"
-        konteks_user += "Tulis pesan WhatsApp penawaran jasa pembuatan website untuk bisnis ini."
+        konteks_user += "Tulis pesan WhatsApp pertama untuk bisnis ini. Ingat: JANGAN jualan, tujuannya bikin mereka reply dulu."
         sistem = PROMPT_SISTEM
 
     max_retry = cfg.SELF_CRITIQUE_MAX_RETRY if cfg.SELF_CRITIQUE_ENABLED else 0
@@ -340,7 +370,7 @@ def main(mode_draft: bool = False, kirim_notif: bool = True):
         elif entri_lama and entri_lama.get("template_id"):
             template_id = entri_lama["template_id"]  # pertahankan template lama (biar konsisten)
         else:
-            template_id = random.choice(["A", "B"])  # lead baru: acak
+            template_id = random.choice(["A", "B", "C"])  # lead baru: acak
 
         try:
             isi_pesan, skor_kualitas = buat_pesan(client, lead, mode=mode, template_id=template_id)

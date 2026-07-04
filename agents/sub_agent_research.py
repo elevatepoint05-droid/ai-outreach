@@ -57,14 +57,24 @@ def riset_lead(lead: dict) -> str | None:
     kategori = lead.get("kategori", "")
     alamat  = lead.get("alamat", "")
 
-    if not rating and not alamat:
+    try:
+        from . import data_sanitizer
+    except ImportError:
+        import data_sanitizer
+    lead_bersih = data_sanitizer.sanitasi_lead(lead)
+
+    rating_display = lead_bersih.get("rating_display", "")
+    alamat_display = lead_bersih.get("alamat_display", "")
+    nama_display   = lead_bersih.get("nama_display", lead.get("nama", ""))
+
+    if not rating_display and not alamat_display:
         return None
 
     konteks = (
-        f"Nama bisnis: {lead.get('nama', '')}\n"
+        f"Nama bisnis: {nama_display}\n"
         f"Kategori: {kategori or 'tidak diketahui'}\n"
-        f"Rating: {rating if rating else 'tidak ada data'}\n"
-        f"Alamat: {alamat or 'tidak diketahui'}\n"
+        f"Rating: {rating_display or 'tidak ada data valid'}\n"
+        f"Alamat: {alamat_display or 'tidak diketahui'}\n"
     )
 
     try:
