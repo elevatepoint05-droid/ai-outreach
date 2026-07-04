@@ -96,6 +96,54 @@ def kirim(chat_id: int | str, teks: str) -> None:
         log.warning(f"[telegram_bot] Gagal kirim pesan: {e}")
 
 
+def _kirim_dengan_tombol(chat_id: int | str, teks: str, keyboard: list[list[dict]]) -> None:
+    """Kirim pesan dengan inline keyboard buttons."""
+    try:
+        _req.post(
+            _api_url("sendMessage"),
+            json={
+                "chat_id": chat_id,
+                "text": teks,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": {"inline_keyboard": keyboard},
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        log.warning(f"[telegram_bot] Gagal kirim pesan dengan tombol: {e}")
+
+
+def _answer_callback(callback_query_id: str, teks: str = "") -> None:
+    """Jawab callback query — WAJIB dipanggil setelah tap tombol, biar spinner hilang."""
+    try:
+        _req.post(
+            _api_url("answerCallbackQuery"),
+            json={"callback_query_id": callback_query_id, "text": teks},
+            timeout=5,
+        )
+    except Exception:
+        pass
+
+
+def _edit_pesan(chat_id: int | str, message_id: int, teks: str) -> None:
+    """Edit pesan yang sudah dikirim — update tampilan setelah tombol di-tap."""
+    try:
+        _req.post(
+            _api_url("editMessageText"),
+            json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": teks,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        log.warning(f"[telegram_bot] Gagal edit pesan: {e}")
+
+
 # ── Baca data lokal ───────────────────────────────────────────────────────────
 
 def _baca_sent() -> list[dict]:
@@ -146,32 +194,30 @@ def handle_status(chat_id: int) -> None:
 
 def handle_pending(chat_id: int) -> None:
     sent = _baca_sent()
-
-    # Urutkan: klinik/hotel duluan, lalu lainnya
     pending = [s for s in sent if s.get("status") in {"pending", "followup_due"}]
-    pending.sort(key=lambda s: (
-        0 if s.get("kategori_group") in {"klinik", "hotel"} else 1
-    ))
+    pending.sort(key=lambda s: (0 if s.get("kategori_group") in {"klinik", "hotel"} else 1))
     pending = pending[:5]
-
     if not pending:
         kirim(chat_id, "📭 Tidak ada pesan pending saat ini.\n\nJalankan /build untuk generate pesan baru.")
         return
-
     total = sum(1 for s in sent if s.get("status") in {"pending", "followup_due"})
-    teks  = f"📬 <b>{total} pending — 5 teratas:</b>\n\n"
-    for i, p in enumerate(pending, 1):
-        grup = p.get("kategori_group", "")
-        ikon = "🏥" if grup == "klinik" else "🏨" if grup == "hotel" else "💼"
-        fu   = " 🔁" if p.get("status") == "followup_due" else ""
-        wa_link = _buat_wa_link(p.get("nomor_wa", ""), p.get("pesan", ""))
-        teks += (
-            f"{i}. {ikon} <b>{p.get('nama', '?')}</b>{fu}\n"
-            f"   <i>{(p.get('pesan') or '')[:80]}...</i>\n"
-            f"   👉 <a href=\"{wa_link}\">Buka & Kirim WA</a>\n"
-            f"   Habis kirim: <code>/kirim {p.get('nomor_wa', '')}</code>\n\n"
+    kirim(chat_id, f"📬 <b>{total} pending — 5 teratas ditampilkan:</b>")
+    for p in pending:
+        grup    = p.get("kategori_group", "")
+        ikon    = "🏥" if grup == "klinik" else "🏨" if grup == "hotel" else "💼"
+        fu      = " 🔁" if p.get("status") == "followup_due" else ""
+        nomor   = p.get("nomor_wa", "")
+        wa_link = _buat_wa_link(nomor, p.get("pesan", ""))
+        teks_lead = (
+            f"{ikon} <b>{p.get('nama', '?')}</b>{fu}\n"
+            f"<i>{(p.get('pesan') or '')[:100]}...</i>\n\n"
+            f"👉 <a href=\"{wa_link}\">Buka & Kirim WA</a>"
         )
-    kirim(chat_id, teks)
+        keyboard = [[
+            {"text": "✅ Terkirim", "callback_data": f"sent:{nomor}"},
+            {"text": "❌ Skip",     "callback_data": f"skip:{nomor}"},
+        ]]
+        _kirim_dengan_tombol(chat_id, teks_lead, keyboard)
 
 
 def handle_drafts(chat_id: int) -> None:
@@ -232,6 +278,39 @@ def handle_agent_loop(chat_id: int) -> None:
         kirim(chat_id, ringkasan)
     except Exception as e:
         kirim(chat_id, f"❌ Agent loop error: {e}")
+
+
+def handle_callback(chat_id: int, callback_query_id: str, data: str, message_id: int) -> None:
+    """Proses tap tombol inline keyboard dari /pending."""
+    try:
+        from . import tracker, rate_guard
+    except ImportError:
+        from agents import tracker, rate_guard
+    if ":" not in data:
+        _answer_callback(callback_query_id, "❓ Format tidak dikenal")
+        return
+    aksi, nomor_wa = data.split(":", 1)
+    if aksi == "sent":
+        berhasil = tracker.update_status(nomor_wa, "sent")
+        if berhasil:
+            rate_guard.catat_kirim(nomor_wa)
+            status_rate = rate_guard.cek_kecepatan_kirim()
+            _answer_callback(callback_query_id, "✅ Ditandai terkirim!")
+            teks_baru = f"✅ <b>Terkirim</b> — <code>{nomor_wa}</code>"
+            if status_rate["level"] != "aman":
+                teks_baru += f"\n\n{status_rate['pesan']}"
+            _edit_pesan(chat_id, message_id, teks_baru)
+        else:
+            _answer_callback(callback_query_id, "❌ Nomor tidak ditemukan")
+    elif aksi == "skip":
+        berhasil = tracker.update_status(nomor_wa, "bounced")
+        if berhasil:
+            _answer_callback(callback_query_id, "⏭ Di-skip")
+            _edit_pesan(chat_id, message_id, f"⏭ <b>Di-skip</b> — <code>{nomor_wa}</code>")
+        else:
+            _answer_callback(callback_query_id, "❌ Nomor tidak ditemukan")
+    else:
+        _answer_callback(callback_query_id, "❓ Aksi tidak dikenal")
 
 
 def handle_orchestrator_status(chat_id: int) -> None:
@@ -531,6 +610,22 @@ def run_polling() -> None:
             updates = _get_updates(offset)
             for update in updates:
                 offset = update["update_id"] + 1
+
+                # Handle tap tombol inline keyboard (callback_query)
+                if "callback_query" in update:
+                    cb        = update["callback_query"]
+                    cb_id     = cb.get("id", "")
+                    cb_data   = cb.get("data", "")
+                    cb_chat   = cb.get("from", {}).get("id")
+                    cb_msg_id = cb.get("message", {}).get("message_id")
+                    if str(cb_chat) != str(TELEGRAM_CHAT_ID):
+                        log.warning(f"[telegram_bot] Callback dari chat_id asing: {cb_chat} — diabaikan.")
+                        _answer_callback(cb_id)
+                        continue
+                    handle_callback(cb_chat, cb_id, cb_data, cb_msg_id)
+                    continue
+
+                # Handle pesan teks biasa
                 msg     = update.get("message", {})
                 chat_id = msg.get("chat", {}).get("id")
                 teks    = (msg.get("text") or "").strip()

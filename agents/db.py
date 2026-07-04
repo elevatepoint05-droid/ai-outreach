@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS leads (
     nomor_wa TEXT,
     nama     TEXT,
     status   TEXT,
-    data     TEXT NOT NULL
+    data     TEXT NOT NULL,
+    research_insight TEXT DEFAULT NULL
 );
 CREATE TABLE IF NOT EXISTS sent (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,6 +82,7 @@ def _konek():
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(_SKEMA)
+        _migrasi_skema(conn)
         yield conn
         conn.commit()
     except Exception:
@@ -88,6 +90,15 @@ def _konek():
         raise
     finally:
         conn.close()
+
+
+def _migrasi_skema(conn) -> None:
+    """Migrasi idempotent: tambah kolom `research_insight` ke tabel leads yang
+    dibuat SEBELUM kolom ini ada. ALTER TABLE cuma dijalankan kalau kolomnya
+    memang belum ada, jadi aman dipanggil tiap koneksi & tidak merusak data lama."""
+    kolom = [r["name"] for r in conn.execute("PRAGMA table_info(leads)").fetchall()]
+    if "research_insight" not in kolom:
+        conn.execute("ALTER TABLE leads ADD COLUMN research_insight TEXT DEFAULT NULL")
 
 
 def _muat_tabel(tabel: str) -> list[dict]:
@@ -98,21 +109,41 @@ def _muat_tabel(tabel: str) -> list[dict]:
 
 def _simpan_tabel(tabel: str, data: list[dict]) -> None:
     """Replace-all isi tabel dengan `data` — mirror perilaku simpan_json()
-    versi lama (tulis ulang seluruh file tiap kali ada perubahan)."""
+    versi lama (tulis ulang seluruh file tiap kali ada perubahan).
+
+    Khusus tabel `leads`, kolom `research_insight` ikut ditulis dari
+    item.get("research_insight") supaya full-replace TIDAK menghapus insight
+    yang sudah tersimpan (nilainya di-carry lewat JSON blob juga)."""
     with _konek() as conn:
         conn.execute(f"DELETE FROM {tabel}")
-        conn.executemany(
-            f"INSERT INTO {tabel} (nomor_wa, nama, status, data) VALUES (?, ?, ?, ?)",
-            [
-                (
-                    item.get("nomor_wa") or "",
-                    item.get("nama") or "",
-                    item.get("status") or "",
-                    json.dumps(item, ensure_ascii=False),
-                )
-                for item in data
-            ],
-        )
+        if tabel == "leads":
+            conn.executemany(
+                "INSERT INTO leads (nomor_wa, nama, status, data, research_insight) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [
+                    (
+                        item.get("nomor_wa") or "",
+                        item.get("nama") or "",
+                        item.get("status") or "",
+                        json.dumps(item, ensure_ascii=False),
+                        item.get("research_insight"),
+                    )
+                    for item in data
+                ],
+            )
+        else:
+            conn.executemany(
+                f"INSERT INTO {tabel} (nomor_wa, nama, status, data) VALUES (?, ?, ?, ?)",
+                [
+                    (
+                        item.get("nomor_wa") or "",
+                        item.get("nama") or "",
+                        item.get("status") or "",
+                        json.dumps(item, ensure_ascii=False),
+                    )
+                    for item in data
+                ],
+            )
 
 
 # ── Leads ─────────────────────────────────────────────────────────────────────
@@ -190,6 +221,46 @@ def get_lead_by_nomor(nomor_wa: str) -> dict | None:
         if lead.get("nomor_wa") == nomor_wa:
             return lead
     return None
+
+
+# ── Research insight (caching hasil sub_agent_research) ────────────────────────
+
+def simpan_research_insight(nomor_wa: str, insight: str) -> bool:
+    """Simpan hasil riset (insight personalisasi) untuk satu lead ke DB.
+
+    Ditulis ke DUA tempat sekaligus supaya konsisten:
+    - kolom `research_insight` (buat query cepat get_leads_belum_diresearch)
+    - field `research_insight` di JSON blob (biar muat_leads() ikut membawanya,
+      dan tidak hilang saat full-replace simpan_leads()).
+
+    Return True kalau lead-nya ketemu & terupdate, False kalau nomor tidak ada.
+    """
+    with _konek() as conn:
+        row = conn.execute(
+            "SELECT id, data FROM leads WHERE nomor_wa = ? LIMIT 1", (nomor_wa,)
+        ).fetchone()
+        if not row:
+            return False
+        d = json.loads(row["data"])
+        d["research_insight"] = insight
+        conn.execute(
+            "UPDATE leads SET data = ?, research_insight = ? WHERE id = ?",
+            (json.dumps(d, ensure_ascii=False), insight, row["id"]),
+        )
+    return True
+
+
+def get_leads_belum_diresearch(limit: int = 3) -> list[dict]:
+    """Ambil lead yang belum punya research_insight (IS NULL) dan status bukan
+    'ada_website'. Dibatasi `limit` (default 3) supaya hemat API call per run."""
+    with _konek() as conn:
+        rows = conn.execute(
+            "SELECT data FROM leads "
+            "WHERE research_insight IS NULL AND status != 'ada_website' "
+            "ORDER BY id LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [json.loads(row["data"]) for row in rows]
 
 
 # ── Agent history (log Think-Act-Observe agent_loop.py, buat dashboard) ────────

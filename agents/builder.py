@@ -252,14 +252,23 @@ def buat_pesan(
             konteks_user += f"Sudut pandang: {sudut_pandang}\n"
         if PORTFOLIO_URL:
             konteks_user += f"Contoh website yang sudah pernah dibuat: {PORTFOLIO_URL}\n"
-        # Sub-agent riset (opsional) — insight tambahan dari rating/alamat
-        # yang selama ini belum dimanfaatkan. Read-only, degradasi aman
-        # kalau gagal (insight None, proses generate pesan tetap lanjut).
-        try:
-            from . import sub_agent_research
-        except ImportError:
-            import sub_agent_research
-        insight = sub_agent_research.riset_lead(lead)
+        # Sub-agent riset (opsional) — insight tambahan dari rating/alamat.
+        # CACHING: kalau lead sudah punya research_insight di DB (hasil tool
+        # research_lead sebelumnya), pakai itu langsung — TIDAK perlu call Groq
+        # lagi (hemat API). Baru kalau belum ada, generate lewat sub-agent dan
+        # simpan hasilnya ke DB untuk pemakaian build berikutnya.
+        insight = lead.get("research_insight")
+        if not insight:
+            try:
+                from . import sub_agent_research
+            except ImportError:
+                import sub_agent_research
+            insight = sub_agent_research.riset_lead(lead)
+            if insight:
+                try:
+                    db.simpan_research_insight(lead.get("nomor_wa"), insight)
+                except Exception as e:
+                    log.info(f"[builder] Gagal simpan research_insight (tidak fatal): {e}")
         if insight:
             konteks_user += f"Insight riset (opsional, pakai kalau relevan): {insight}\n"
         konteks_user += f"Instruksi tambahan: {ab_instruksi}\n"

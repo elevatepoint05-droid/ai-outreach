@@ -108,6 +108,36 @@ def _tool_generate_report(hari: int = 7) -> dict:
     return {"laporan_dibuat": str(path)}
 
 
+def _tool_research_lead() -> dict:
+    """
+    Riset lead yang belum punya insight personalisasi (max 3 per panggilan).
+    Hasil disimpan ke DB supaya build_pesan tinggal ambil, tidak perlu
+    generate ulang lewat Groq tiap kali — hemat API call.
+    """
+    try:
+        from . import sub_agent_research
+    except ImportError:
+        import sub_agent_research
+
+    leads = db.get_leads_belum_diresearch(limit=3)
+    jumlah_diresearch = 0
+    jumlah_dapat_insight = 0
+    for lead in leads:
+        insight = sub_agent_research.riset_lead(lead)
+        jumlah_diresearch += 1
+        if insight:
+            db.simpan_research_insight(lead.get("nomor_wa"), insight)
+            jumlah_dapat_insight += 1
+
+    # ada_progress: True hanya kalau ada insight baru yang benar-benar tersimpan
+    # ke DB. Kalau tidak ada perubahan nyata, agent loop tidak akan mengulang.
+    return {
+        "jumlah_diresearch": jumlah_diresearch,
+        "jumlah_dapat_insight": jumlah_dapat_insight,
+        "ada_progress": jumlah_dapat_insight > 0,
+    }
+
+
 def _tool_cek_keamanan_sistem() -> dict:
     """
     Security check — versi khusus keamanan dari cek_kesehatan_sistem.
@@ -309,6 +339,15 @@ TOOLS: dict[str, dict[str, Any]] = {
         "fungsi": _tool_cek_status,
         "butuh_args": [],
         "kategori": "aman",
+    },
+    "research_lead": {
+        "deskripsi": "Riset lead yang belum punya insight personalisasi — panggil "
+                     "sebelum build_pesan supaya pesan lebih personal. Max 3 lead per "
+                     "panggilan, hemat API call karena insight disimpan ke DB dan tidak "
+                     "perlu di-generate ulang.",
+        "fungsi": _tool_research_lead,
+        "butuh_args": [],
+        "kategori": "aksi",
     },
     "build_pesan": {
         "deskripsi": "Generate pesan WhatsApp baru untuk lead yang masih pending "
