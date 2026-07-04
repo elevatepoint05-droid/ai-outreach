@@ -31,46 +31,53 @@ MODEL = cfg.GROQ_MODEL if hasattr(cfg, "GROQ_MODEL") else "llama-3.1-8b-instant"
 
 PROMPT_SISTEM = """Kamu adalah AI agent yang mengelola sistem outreach WhatsApp
 untuk freelancer web developer di Indonesia. Tugasmu: putuskan SATU aksi paling
-tepat untuk diambil sekarang, berdasarkan kondisi sistem yang diberikan.
+tepat untuk diambil sekarang.
 
-Kamu HANYA boleh memilih dari daftar tools yang tersedia — jangan mengarang
-tool yang tidak ada di daftar.
+Kamu HANYA boleh memilih dari daftar tools yang tersedia.
 
-PENTING — arti status "pending":
-- Status "pending" berarti pesan untuk lead itu SUDAH DIBUAT dan siap dikirim
-  manual. "pending" BUKAN berarti lead belum punya pesan.
-- Jadi adanya lead ber-status "pending" TIDAK berarti kamu perlu build_pesan lagi.
-- Tool build_pesan HANYA perlu dipanggil untuk lead yang benar-benar BELUM PERNAH
-  dibuatkan pesan sama sekali (belum muncul di breakdown status manapun).
+=== PEMAHAMAN WAJIB ===
+- Status "pending" = pesan SUDAH DIBUAT, tinggal dikirim manual. BUKAN berarti perlu di-generate lagi.
+- Status "sent" = pesan sudah dikirim, menunggu balasan.
+- "leads_belum_diresearch" = lead yang belum punya insight personalisasi di DB.
+- "ada_progress: false" di histori = tool sudah jalan tapi tidak ada perubahan -> JANGAN ulangi.
 
-Prinsip pengambilan keputusan:
-- Kalau ada lead yang benar-benar belum pernah dibuatkan pesan -> build_pesan
-- Kalau ada lead sent yang lama tidak respons -> cek_followup
-- Kalau leads.json ada yang belum pernah dicek websitenya -> scan_website
-  (tapi jangan pilih ini kalau baru saja dilakukan di riwayat)
-- Kalau semua sudah ditangani, sistem sudah rapi -> tidak_ada_aksi
-- Jangan pilih tool yang sama berkali-kali berturut-turut tanpa alasan baru
+=== URUTAN PRIORITAS IDEAL ===
+1. research_lead (kalau ada leads_belum_diresearch > 0) -> insight tersimpan ke DB
+2. build_pesan (kalau ada lead baru tanpa pesan) -> pakai insight yang sudah ada
+3. cek_followup (kalau ada lead "sent" sudah lama tidak balas)
+4. tidak_ada_aksi (kalau semua sudah tertangani)
 
-ATURAN ANTI-PENGULANGAN (WAJIB DIPATUHI, BERLAKU UNTUK SEMUA TOOL):
-- Cek histori aksi sebelum memutuskan. Kalau ADA tool apapun (bukan cuma
-  build_pesan — termasuk cek_followup, scan_website, dan tool lainnya) yang
-  sudah dipanggil di histori dan hasilnya menunjukkan "ada_progress": false,
-  JANGAN pilih tool yang sama lagi di putaran ini. Pilih "tidak_ada_aksi" atau
-  tool lain yang berbeda.
-- "ada_progress": false artinya aksi itu TIDAK menghasilkan perubahan nyata
-  (mis. build_pesan tapi jumlah pending tetap, cek_followup tapi followup_due
-  tetap, scan_website tapi jumlah belum-dicek tetap). Mengulanginya hanya
-  memboroskan kuota API tanpa hasil.
-- Kalau sudah mencoba tool yang sama dan tetap dapat "ada_progress": false
-  BERULANG KALI, atau kondisi tidak sesuai dengan aturan manapun yang
-  dijelaskan di atas — pilih "eskalasi" dan jelaskan kenapa di parameter
-  "alasan", JANGAN terus mencoba tool lain secara acak. Lebih baik jujur
-  bilang tidak yakin dan minta keputusan manusia daripada asal menebak.
+=== CONTOH KEPUTUSAN BAIK vs BURUK ===
 
+KONDISI: leads_belum_diresearch=5, pending=10, sent=8
+BAIK: {"tool": "research_lead", "alasan": "Ada 5 lead belum punya insight, research dulu sebelum build pesan biar lebih personal", "selesai": false}
+BURUK: {"tool": "build_pesan", "alasan": "Ada 10 pending"} <- salah, pending = sudah ada pesan
+
+KONDISI: pending=37, sent=12, leads_belum_diresearch=0
+BAIK: {"tool": "tidak_ada_aksi", "alasan": "Semua lead sudah punya pesan pending, tidak ada yang perlu dikerjakan otomatis sekarang", "selesai": true}
+BURUK: {"tool": "build_pesan", "alasan": "Masih banyak pending"} <- SALAH PAHAM
+
+KONDISI: histori=[cek_followup -> ada_progress:false], sent=5
+BAIK: {"tool": "tidak_ada_aksi", "alasan": "cek_followup sudah jalan tapi tidak ada progress, tidak ada aksi lain yang diperlukan", "selesai": true}
+BURUK: {"tool": "cek_followup", "alasan": "Masih ada yang sent"} <- DILARANG, ulangi tool yang tidak progress
+
+KONDISI: semua sudah rapi, tidak ada yang perlu dikerjakan
+BAIK: {"tool": "tidak_ada_aksi", "alasan": "Sistem sudah rapi", "selesai": true}
+
+KONDISI: histori menunjukkan ada_progress:false berulang, tidak tahu harus ngapain
+BAIK: {"tool": "eskalasi", "alasan": "Sudah coba 2 tool berbeda tapi tidak ada progress, butuh keputusan manual", "selesai": true}
+
+=== ATURAN ANTI-PENGULANGAN (WAJIB) ===
+Sebelum pilih tool, cek histori. Kalau tool yang sama sudah dipanggil dan
+hasilnya "ada_progress": false -> DILARANG pilih tool itu lagi.
+Berlaku untuk SEMUA tool: build_pesan, cek_followup, scan_website, research_lead.
+Kalau semua opsi sudah dicoba tanpa progress -> pilih eskalasi, bukan nebak-nebak.
+
+=== FORMAT JAWABAN ===
 Jawab HANYA dalam format JSON, tidak ada teks lain:
 {"tool": "<nama_tool>", "alasan": "<1 kalimat alasan singkat>", "selesai": <true/false>}
 
-"selesai": true kalau menurutmu tidak perlu putaran berikutnya setelah ini."""
+"selesai": true kalau tidak perlu putaran berikutnya."""
 
 
 def _snapshot_kondisi() -> dict:
@@ -80,10 +87,16 @@ def _snapshot_kondisi() -> dict:
     from collections import Counter
     breakdown = Counter(s.get("status", "pending") for s in sent)
     belum_dicek_website = sum(1 for l in leads if not l.get("website_dicek"))
+    belum_diresearch = sum(
+        1 for l in leads
+        if l.get("research_insight") is None
+        and not l.get("ada_website")
+    )
     return {
         "total_leads": len(leads),
         "breakdown_status": dict(breakdown),
         "leads_belum_dicek_website": belum_dicek_website,
+        "leads_belum_diresearch": belum_diresearch,
         "waktu_sekarang": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
 

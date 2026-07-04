@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS sent (
     nomor_wa TEXT,
     nama     TEXT,
     status   TEXT,
-    data     TEXT NOT NULL
+    data     TEXT NOT NULL,
+    tanggal_deal TEXT DEFAULT NULL,
+    nilai_deal   REAL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_leads_nomor_wa ON leads(nomor_wa);
 CREATE INDEX IF NOT EXISTS idx_leads_status   ON leads(status);
@@ -100,6 +102,13 @@ def _migrasi_skema(conn) -> None:
     if "research_insight" not in kolom:
         conn.execute("ALTER TABLE leads ADD COLUMN research_insight TEXT DEFAULT NULL")
 
+    # Conversion tracking — kolom deal di tabel sent (DB lama belum punya).
+    kolom_sent = [r["name"] for r in conn.execute("PRAGMA table_info(sent)").fetchall()]
+    if "tanggal_deal" not in kolom_sent:
+        conn.execute("ALTER TABLE sent ADD COLUMN tanggal_deal TEXT DEFAULT NULL")
+    if "nilai_deal" not in kolom_sent:
+        conn.execute("ALTER TABLE sent ADD COLUMN nilai_deal REAL DEFAULT 0")
+
 
 def _muat_tabel(tabel: str) -> list[dict]:
     with _konek() as conn:
@@ -127,6 +136,22 @@ def _simpan_tabel(tabel: str, data: list[dict]) -> None:
                         item.get("status") or "",
                         json.dumps(item, ensure_ascii=False),
                         item.get("research_insight"),
+                    )
+                    for item in data
+                ],
+            )
+        elif tabel == "sent":
+            conn.executemany(
+                "INSERT INTO sent (nomor_wa, nama, status, data, tanggal_deal, nilai_deal) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        item.get("nomor_wa") or "",
+                        item.get("nama") or "",
+                        item.get("status") or "",
+                        json.dumps(item, ensure_ascii=False),
+                        item.get("tanggal_deal"),
+                        item.get("nilai_deal") or 0,
                     )
                     for item in data
                 ],
@@ -261,6 +286,63 @@ def get_leads_belum_diresearch(limit: int = 3) -> list[dict]:
             (limit,),
         ).fetchall()
     return [json.loads(row["data"]) for row in rows]
+
+
+# ── Conversion tracking (deal / closing) ──────────────────────────────────────
+# Catatan arsitektur: tabel `sent` menyimpan record kanonik di JSON blob `data`.
+# Field deal (tanggal_deal, nilai_deal) ditulis ke JSON blob (kanonik, ikut
+# terbawa muat_sent & tidak hilang saat full-replace) SEKALIGUS di-mirror ke
+# kolom tanggal_deal/nilai_deal (buat query cepat). Fungsi baca di bawah
+# sengaja baca dari JSON blob (muat_sent) supaya selalu akurat.
+
+def catat_deal(nomor_wa: str, nilai_deal: float = 0.0) -> bool:
+    """Catat deal/closing — lead ini beneran jadi klien bayar.
+
+    Set tanggal_deal + nilai_deal dan ubah status jadi 'replied'. Kolom deal
+    di tabel sent otomatis dibuat lewat _migrasi_skema (aman untuk DB lama).
+    Return True kalau nomor ketemu & terupdate, False kalau tidak ada.
+    """
+    from datetime import datetime
+    tanggal = datetime.now().isoformat(timespec="seconds")
+    with _konek() as conn:
+        row = conn.execute(
+            "SELECT id, data FROM sent WHERE nomor_wa = ? LIMIT 1", (nomor_wa,)
+        ).fetchone()
+        if not row:
+            return False
+        d = json.loads(row["data"])
+        d["tanggal_deal"] = tanggal
+        d["nilai_deal"]   = nilai_deal
+        d["status"]       = "replied"
+        conn.execute(
+            "UPDATE sent SET data = ?, status = 'replied', tanggal_deal = ?, nilai_deal = ? "
+            "WHERE id = ?",
+            (json.dumps(d, ensure_ascii=False), tanggal, nilai_deal, row["id"]),
+        )
+    return True
+
+
+def get_conversion_stats() -> dict:
+    """Hitung conversion rate dan total revenue dari data sent (JSON blob)."""
+    sent = muat_sent()
+    total_sent = sum(1 for s in sent if s.get("status") in ("sent", "replied", "followup_due"))
+    deals = [s for s in sent if s.get("tanggal_deal")]
+    total_deal = len(deals)
+    total_revenue = sum(float(s.get("nilai_deal") or 0) for s in deals)
+    rate = round((total_deal / total_sent * 100), 1) if total_sent else 0.0
+    return {
+        "total_sent": total_sent,
+        "total_deal": total_deal,
+        "conversion_rate_persen": rate,
+        "total_revenue": total_revenue,
+    }
+
+
+def get_deals(limit: int = 20) -> list[dict]:
+    """Ambil daftar lead yang sudah closing (punya tanggal_deal), terbaru dulu."""
+    deals = [s for s in muat_sent() if s.get("tanggal_deal")]
+    deals.sort(key=lambda s: s.get("tanggal_deal") or "", reverse=True)
+    return deals[:limit]
 
 
 # ── Agent history (log Think-Act-Observe agent_loop.py, buat dashboard) ────────

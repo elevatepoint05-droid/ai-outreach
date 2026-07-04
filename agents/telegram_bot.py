@@ -474,6 +474,76 @@ def handle_bounced(chat_id: int, args: str) -> None:
         kirim(chat_id, f"⚠️ Nomor <code>{nomor_wa}</code> tidak ditemukan di sistem.")
 
 
+def handle_deal(chat_id: int, args: str) -> None:
+    """/deal <nomor> [nilai] — catat closing deal."""
+    parts = args.strip().split()
+    if not parts:
+        kirim(chat_id, "⚠️ Format: <code>/deal 628xxxxxxxxx [nilai_rupiah]</code>\n\nContoh: <code>/deal 6281234567 2500000</code>")
+        return
+
+    nomor_wa = parts[0]
+    nilai = 0.0
+    if len(parts) >= 2:
+        try:
+            nilai = float(parts[1].replace(".", "").replace(",", ""))
+        except ValueError:
+            kirim(chat_id, f"⚠️ Nilai '<code>{parts[1]}</code>' bukan angka yang valid.")
+            return
+
+    try:
+        from . import db as _db
+    except ImportError:
+        from agents import db as _db
+
+    berhasil = _db.catat_deal(nomor_wa, nilai)
+    if not berhasil:
+        kirim(chat_id, f"❌ Nomor <code>{nomor_wa}</code> tidak ditemukan di sistem.")
+        return
+
+    stats = _db.get_conversion_stats()
+    nilai_str = f"Rp{nilai:,.0f}".replace(",", ".") if nilai > 0 else "(nilai belum dicatat)"
+
+    teks = (
+        f"🎉 <b>Deal tercatat!</b>\n\n"
+        f"📱 <code>{nomor_wa}</code>\n"
+        f"💰 Nilai: {nilai_str}\n\n"
+        f"<b>Conversion rate lo sejauh ini:</b>\n"
+        f"Total terkirim  : {stats['total_sent']}\n"
+        f"Total closing   : {stats['total_deal']}\n"
+        f"Conversion rate : {stats['conversion_rate_persen']}%\n"
+        f"Total revenue   : Rp{stats['total_revenue']:,.0f}".replace(",", ".")
+    )
+    kirim(chat_id, teks)
+
+
+def handle_konversi(chat_id: int) -> None:
+    """/konversi — ringkasan conversion rate + daftar deal terbaru."""
+    try:
+        from . import db as _db
+    except ImportError:
+        from agents import db as _db
+
+    stats = _db.get_conversion_stats()
+    deals = _db.get_deals(limit=5)
+
+    teks = (
+        f"📊 <b>Conversion Stats</b>\n\n"
+        f"Total terkirim  : {stats['total_sent']}\n"
+        f"Total closing   : {stats['total_deal']}\n"
+        f"Conversion rate : {stats['conversion_rate_persen']}%\n"
+        f"Total revenue   : Rp{stats['total_revenue']:,.0f}\n\n".replace(",", ".")
+    )
+    if deals:
+        teks += "<b>Deal terbaru:</b>\n"
+        for d in deals:
+            nilai = d.get("nilai_deal", 0) or 0
+            teks += f"• {d.get('nama', '?')} — Rp{nilai:,.0f}\n".replace(",", ".")
+    else:
+        teks += "<i>Belum ada deal yang tercatat.\nGunakan /deal setelah closing.</i>"
+
+    kirim(chat_id, teks)
+
+
 def handle_ratecheck(chat_id: int) -> None:
     """Cek manual kecepatan pengiriman WA sekarang (rate_guard)."""
     try:
@@ -535,6 +605,8 @@ HELP_TEXT = (
     "/ratecheck — cek kecepatan kirim WA (resiko kena restriksi)\n"
     "/cari <keyword> — cari lead by nama/kota/kategori/nomor\n"
     "/bounced <nomor> — tandai nomor gak valid/gagal kirim\n"
+    "/deal <nomor> [nilai] — catat closing deal (lead jadi klien bayar)\n"
+    "/konversi  — ringkasan conversion rate + daftar deal\n"
     "/report — laporan PDF 7 hari terakhir (langsung dikirim ke chat)\n"
     "/balas <nomor> <pesan> — draft balasan AI untuk lead yang reply\n"
     "/orchestrator — cek status decision loop otomatis\n"
@@ -551,6 +623,7 @@ _COMMANDS: dict[str, callable] = {
     "/followup": handle_followup,
     "/report":   handle_report,
     "/ratecheck": handle_ratecheck,
+    "/konversi": handle_konversi,
     "/orchestrator": handle_orchestrator_status,
     "/agentloop": handle_agent_loop,
 }
@@ -650,6 +723,9 @@ def run_polling() -> None:
                 elif cmd == "/cari":
                     args = teks[len(cmd):].strip()
                     handle_cari(chat_id, args)
+                elif cmd == "/deal":
+                    args = teks[len(cmd):].strip()
+                    handle_deal(chat_id, args)
                 elif cmd == "/bounced":
                     args = teks[len(cmd):].strip()
                     handle_bounced(chat_id, args)
