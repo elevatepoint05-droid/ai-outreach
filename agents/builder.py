@@ -349,7 +349,7 @@ def main(mode_draft: bool = False, kirim_notif: bool = True):
     # Index sent list berdasarkan nomor_wa untuk update data pending/followup_due
     indeks_sent = {item["nomor_wa"]: i for i, item in enumerate(sent)}
 
-    client = Groq(api_key=api_key)
+    client = cfg.get_groq_client(api_key)
     pesan_baru = []
     pesan_diperbarui = 0
     panggilan_terpakai = 0

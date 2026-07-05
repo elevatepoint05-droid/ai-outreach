@@ -14,7 +14,6 @@ Batasan sub-agent (mencegah runaway / biaya tak terkendali):
 
 from pathlib import Path
 from dotenv import load_dotenv
-from groq import Groq
 
 try:
     from . import config as cfg
@@ -78,7 +77,7 @@ def riset_lead(lead: dict) -> str | None:
     )
 
     try:
-        client = Groq(api_key=api_key)
+        client = cfg.get_groq_client(api_key)
         model  = getattr(cfg, "GROQ_MODEL", "llama-3.1-8b-instant")
         respon = client.chat.completions.create(
             model=model,

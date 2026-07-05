@@ -27,7 +27,6 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from groq import Groq
 
 try:
     from . import db, tracker
@@ -120,7 +119,7 @@ def draft_balasan(nomor_wa: str, pesan_masuk: str) -> dict:
             "error": "GROQ_API_KEY belum diset di .env",
         }
 
-    client = Groq(api_key=api_key)
+    client = cfg.get_groq_client(api_key)
     try:
         respon = client.chat.completions.create(
             model=MODEL,

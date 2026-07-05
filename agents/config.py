@@ -90,3 +90,31 @@ ALERT_CRASH_THRESHOLD = int(os.getenv("ALERT_CRASH_THRESHOLD", "3"))
 # Kirim "bot masih hidup" kalau sudah sekian jam tanpa aksi nyata (build/followup/
 # laporan) — biar user yakin loop belum diam-diam mati.
 ALERT_HEARTBEAT_JAM = int(os.getenv("ALERT_HEARTBEAT_JAM", "12"))
+
+# ── Groq client factory ──────────────────────────────────────────────────────
+# PENTING: dari VPS/cloud (Railway dkk), request ke api.groq.com lewat
+# httpx/urllib default sering kena block Cloudflare (error 1010 — "banned
+# based on your browser's signature"). Ini BUKAN soal API key salah — WAF
+# Groq nge-flag TLS/HTTP fingerprint library Python sebagai bot. Fix: kirim
+# User-Agent yang mirip browser asli. Terverifikasi lolos block via test
+# manual dari container Railway (curl tidak ada, dites pakai urllib).
+#
+# SEMUA pemanggil Groq API (builder.py, agent_loop.py, reply_assistant.py,
+# sub_agent_research.py) WAJIB pakai get_groq_client() ini, JANGAN
+# instantiate Groq(...) langsung — supaya fix ini otomatis kebawa ke semua
+# tempat dan tidak ada yang lupa pas nambah caller baru.
+_GROQ_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+
+def get_groq_client(api_key: str | None = None):
+    """Bikin instance Groq client dengan User-Agent browser-like terpasang
+    (lihat catatan _GROQ_USER_AGENT di atas). Default pakai GROQ_API_KEY
+    dari .env kalau api_key tidak dikasih eksplisit."""
+    from groq import Groq
+    return Groq(
+        api_key=api_key or GROQ_API_KEY,
+        default_headers={"User-Agent": _GROQ_USER_AGENT},
+    )
