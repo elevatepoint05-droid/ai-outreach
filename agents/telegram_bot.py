@@ -12,7 +12,7 @@ Commands yang tersedia:
     /daily   — trigger followup + build (sama kayak python main.py daily)
     /build   — trigger build saja
     /followup — trigger followup saja
-    /kirim <nomor> — tandai lead 'sent' setelah kirim WA manual
+    /kirim <nomor[,nomor2,...]> — tandai lead 'sent' (support multi-nomor, pisah koma/spasi)
     /report  — generate laporan PDF 7 hari terakhir, dikirim langsung ke chat
     /balas <nomor> <pesan> — draft balasan AI untuk lead yang reply
     /orchestrator — cek status decision loop otomatis (ON/OFF)
@@ -263,6 +263,43 @@ def _jalankan_command(chat_id: int, perintah: str) -> None:
         kirim(chat_id, "⚠️ Timeout — proses terlalu lama. Cek laptop lo.")
     except Exception as e:
         kirim(chat_id, f"❌ Error: {e}")
+
+
+def kirim_laporan_harian() -> None:
+    """
+    Kirim ringkasan laporan harian ke TELEGRAM_CHAT_ID: pending saat ini,
+    jumlah sent hari ini, conversion rate, dan total revenue.
+
+    Dipanggil otomatis dari orchestrator.py jam LAPORAN_HARIAN_JAM (default
+    07:00, opt-in lewat LAPORAN_HARIAN_ENABLED di .env) — bisa juga dipanggil
+    manual buat testing/debug.
+    """
+    try:
+        from . import db as _db
+    except ImportError:
+        from agents import db as _db
+
+    sent  = _db.muat_sent()
+    stats = _db.get_conversion_stats()
+
+    hitung = Counter(s.get("status", "pending") for s in sent)
+
+    hari_ini = datetime.now().strftime("%Y-%m-%d")
+    sent_hari_ini = sum(
+        1 for s in sent
+        if s.get("jam_kirim") and str(s["jam_kirim"])[:10] == hari_ini
+    )
+
+    teks = (
+        f"📅 <b>Laporan Harian</b> — {datetime.now().strftime('%d %b %Y')}\n\n"
+        f"📬 Pending saat ini : {hitung.get('pending', 0)}\n"
+        f"✅ Sent hari ini    : {sent_hari_ini}\n"
+        f"💰 Conversion rate  : {stats['conversion_rate_persen']}%\n"
+        f"💵 Total revenue    : Rp{stats['total_revenue']:,.0f}\n\n"
+        "Ketik /status untuk detail lengkap, /konversi untuk breakdown deal."
+    ).replace(",", ".")
+
+    kirim(TELEGRAM_CHAT_ID, teks)
 
 
 def handle_agent_loop(chat_id: int) -> None:
@@ -565,12 +602,28 @@ def handle_ratecheck(chat_id: int) -> None:
 
 def handle_kirim(chat_id: int, args: str) -> None:
     """
-    /kirim <nomor_wa> — tandai lead sebagai 'sent' setelah lo kirim WA manual.
-    Sekaligus cek kecepatan pengiriman (rate_guard).
+    /kirim <nomor_wa> [nomor2] [nomor3] — tandai 1 atau lebih lead sebagai 'sent'.
+    Support format:
+        /kirim 628xxx                    — single nomor (backward compatible)
+        /kirim 628xxx,628yyy,628zzz      — comma-separated
+        /kirim 628xxx 628yyy 628zzz      — space-separated
     """
-    nomor_wa = args.strip()
-    if not nomor_wa:
-        kirim(chat_id, "⚠️ Format: <code>/kirim 628xxxxxxxxx</code>\n\nCopy nomor dari daftar /pending.")
+    import re
+
+    if not args.strip():
+        kirim(
+            chat_id,
+            "⚠️ Format:\n"
+            "  <code>/kirim 628xxxxxxxxx</code>\n"
+            "  <code>/kirim 628xxx,628yyy,628zzz</code>\n\n"
+            "Copy nomor dari daftar /pending."
+        )
+        return
+
+    nomor_list = [n.strip() for n in re.split(r"[,\s]+", args.strip()) if n.strip()]
+
+    if not nomor_list:
+        kirim(chat_id, "⚠️ Nomor tidak terbaca. Format: <code>/kirim 628xxx</code> atau <code>/kirim 628xxx,628yyy</code>")
         return
 
     try:
@@ -578,17 +631,44 @@ def handle_kirim(chat_id: int, args: str) -> None:
     except ImportError:
         from agents import tracker, rate_guard
 
-    berhasil = tracker.update_status(nomor_wa, "sent")
-    if not berhasil:
-        kirim(chat_id, f"❌ Nomor <code>{nomor_wa}</code> tidak ditemukan di sistem.")
+    # Single nomor — response format lama (backward compatible)
+    if len(nomor_list) == 1:
+        nomor_wa = nomor_list[0]
+        berhasil = tracker.update_status(nomor_wa, "sent")
+        if not berhasil:
+            kirim(chat_id, f"❌ Nomor <code>{nomor_wa}</code> tidak ditemukan di sistem.")
+            return
+        rate_guard.catat_kirim(nomor_wa)
+        status_rate = rate_guard.cek_kecepatan_kirim()
+        teks = f"✅ <code>{nomor_wa}</code> ditandai <b>sent</b>."
+        if status_rate["level"] != "aman":
+            teks += f"\n\n{status_rate['pesan']}"
+        kirim(chat_id, teks)
         return
 
-    rate_guard.catat_kirim(nomor_wa)
-    status_rate = rate_guard.cek_kecepatan_kirim()
+    # Multi-nomor
+    berhasil_list: list[str] = []
+    gagal_list:    list[str] = []
 
-    teks = f"✅ <code>{nomor_wa}</code> ditandai <b>sent</b>."
-    if status_rate["level"] != "aman":
-        teks += f"\n\n{status_rate['pesan']}"
+    for nomor_wa in nomor_list:
+        ok = tracker.update_status(nomor_wa, "sent")
+        if ok:
+            rate_guard.catat_kirim(nomor_wa)
+            berhasil_list.append(nomor_wa)
+        else:
+            gagal_list.append(nomor_wa)
+
+    teks = f"📤 <b>{len(nomor_list)} nomor diproses — {len(berhasil_list)} berhasil:</b>\n\n"
+    for n in berhasil_list:
+        teks += f"✅ <code>{n}</code>\n"
+    for n in gagal_list:
+        teks += f"❌ <code>{n}</code> — tidak ditemukan\n"
+
+    if berhasil_list:
+        status_rate = rate_guard.cek_kecepatan_kirim()
+        if status_rate["level"] != "aman":
+            teks += f"\n{status_rate['pesan']}"
+
     kirim(chat_id, teks)
 
 
@@ -601,7 +681,7 @@ HELP_TEXT = (
     "/daily     — followup + build (siklus harian)\n"
     "/build     — generate pesan baru saja\n"
     "/followup  — tandai lead yang perlu follow-up\n"
-    "/kirim <nomor> — tandai sent setelah kirim WA manual\n"
+    "/kirim <nomor[,nomor2,...]> — tandai sent (support multi-nomor)\n"
     "/ratecheck — cek kecepatan kirim WA (resiko kena restriksi)\n"
     "/cari <keyword> — cari lead by nama/kota/kategori/nomor\n"
     "/bounced <nomor> — tandai nomor gak valid/gagal kirim\n"

@@ -78,3 +78,15 @@ RESEARCH_SUBAGENT_ENABLED = os.getenv("RESEARCH_SUBAGENT_ENABLED", "false").lowe
 ORCHESTRATOR_ENABLED       = os.getenv("ORCHESTRATOR_ENABLED", "false").lower() == "true"
 ORCHESTRATOR_CEK_INTERVAL  = int(os.getenv("ORCHESTRATOR_CEK_INTERVAL", "1800"))
 ORCHESTRATOR_JAM_BUILD     = os.getenv("ORCHESTRATOR_JAM_BUILD", "06:00").strip()
+
+# ── Laporan harian otomatis (dikirim orchestrator, butuh ORCHESTRATOR_ENABLED=true) ──
+LAPORAN_HARIAN_ENABLED = os.getenv("LAPORAN_HARIAN_ENABLED", "true").lower() == "true"
+LAPORAN_HARIAN_JAM     = os.getenv("LAPORAN_HARIAN_JAM", "07:00").strip()
+
+# ── Error alert & heartbeat (orchestrator) ──────────────────────────────────────
+# Berapa kali error beruntun dalam 10 menit sebelum orchestrator dianggap
+# "crash berulang" dan di-pause sementara (butuh cek manual).
+ALERT_CRASH_THRESHOLD = int(os.getenv("ALERT_CRASH_THRESHOLD", "3"))
+# Kirim "bot masih hidup" kalau sudah sekian jam tanpa aksi nyata (build/followup/
+# laporan) — biar user yakin loop belum diam-diam mati.
+ALERT_HEARTBEAT_JAM = int(os.getenv("ALERT_HEARTBEAT_JAM", "12"))
