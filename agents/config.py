@@ -1,4 +1,5 @@
 """
+from typing import Optional
 config.py
 =========
 Satu-satunya tempat baca .env dan set default value.
@@ -15,7 +16,7 @@ Untuk mengubah config tanpa edit kode: isi .env (lihat .env.example).
 
 import os
 from pathlib import Path
-
+from typing import Optional
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -109,12 +110,24 @@ _GROQ_USER_AGENT = (
 )
 
 
-def get_groq_client(api_key: str | None = None):
+def get_groq_client(api_key: Optional[str] = None):
     """Bikin instance Groq client dengan User-Agent browser-like terpasang
     (lihat catatan _GROQ_USER_AGENT di atas). Default pakai GROQ_API_KEY
     dari .env kalau api_key tidak dikasih eksplisit."""
+    import httpx
     from groq import Groq
+    # Paksa IPv4: banyak VPS (termasuk Rumahweb) punya route IPv6 yang
+    # terdaftar tapi tidak fungsional. httpx pilih IPv6 (AAAA) duluan ->
+    # TCP connect gagal -> groq SDK lempar "Connection error" generik.
+    # local_address="0.0.0.0" memaksa socket bind IPv4-only.
+    transport = httpx.HTTPTransport(local_address="0.0.0.0", retries=2)
+    http_client = httpx.Client(
+        transport=transport,
+        timeout=httpx.Timeout(30.0, connect=10.0),
+        headers={"User-Agent": _GROQ_USER_AGENT},
+    )
     return Groq(
         api_key=api_key or GROQ_API_KEY,
         default_headers={"User-Agent": _GROQ_USER_AGENT},
+        http_client=http_client,
     )

@@ -74,8 +74,23 @@ def _get_updates(offset: int | None = None) -> list[dict]:
             params={"timeout": 25, "offset": offset},
             timeout=30,
         )
-        return r.json().get("result", [])
-    except Exception:
+        data = r.json()
+        if not data.get("ok", False):
+            # 409 Conflict = ADA PROSES BOT LAIN yang lagi polling token yang
+            # sama (biasanya systemd auto-restart setelah pkill). Jangan ditelan!
+            log.warning(
+                f"[telegram_bot] getUpdates gagal (HTTP {r.status_code}): "
+                f"{data.get('description', '?')}"
+            )
+            if r.status_code == 409:
+                log.warning(
+                    "[telegram_bot] >>> 409 Conflict: ada instance bot LAIN yang "
+                    "jalan. Cek: systemctl status ai-outreach && ps aux | grep main.py"
+                )
+            return []
+        return data.get("result", [])
+    except Exception as e:
+        log.warning(f"[telegram_bot] getUpdates error jaringan: {e}")
         return []
 
 
@@ -790,6 +805,8 @@ def run_polling() -> None:
 
                 if not teks:
                     continue
+
+                log.info(f"[telegram_bot] Chat masuk dari {chat_id}: {teks[:80]}")
 
                 cmd = teks.split()[0].lower()
                 if cmd in {"/start", "/help"}:

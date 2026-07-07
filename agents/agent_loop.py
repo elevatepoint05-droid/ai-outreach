@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-
+from groq import Groq
 try:
     from . import db, tool_registry
     from .log_setup import buat_logger
@@ -120,7 +120,7 @@ def _think(histori_aksi: list[dict], api_key: str) -> dict:
         "Pilih SATU tool untuk dijalankan sekarang."
     )
 
-    client = cfg.get_groq_client(api_key)
+    client = Groq(api_key=api_key)
     respon = client.chat.completions.create(
         model=MODEL,
         messages=[
